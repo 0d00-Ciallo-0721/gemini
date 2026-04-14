@@ -1,0 +1,14 @@
+INFO:     Started server process [25844]
+INFO:     Waiting for application startup.
+2026-04-14 10:51:01.451 | DEBUG    | gemini_webapi.utils.get_access_token:get_access_token:171 - Skipping loading local browser cookies. Login to gemini.google.com in your browser first.
+2026-04-14 10:51:03.183 | DEBUG    | gemini_webapi.utils.get_access_token:get_access_token:196 - Init attempt (1/2) succeeded. Initializing client...
+2026-04-14 10:51:03.196 | SUCCESS  | gemini_webapi.client:init:234 - Gemini client initialized successfully.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started server process [5560]
+INFO:     Waiting for application startup.
+2026-04-14 10:57:00.013 | DEBUG    | gemini_webapi.utils.get_access_token:get_access_token:171 - Skipping loading local browser cookies. Login to gemini.google.com in your browser first.
+2026-04-14 10:57:02.487 | DEBUG    | gemini_webapi.utils.get_access_token:get_access_token:196 - Init attempt (1/2) succeeded. Initializing client...
+2026-04-14 10:57:02.500 | SUCCESS  | gemini_webapi.client:init:234 - Gemini client initialized successfully.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)

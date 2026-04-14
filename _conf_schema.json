@@ -1,0 +1,88 @@
+{
+  "managed_service": {
+    "description": "是否由插件自动管理 Gemini reverse 服务",
+    "type": "bool",
+    "default": true,
+    "hint": "建议开启。开启后，插件会自动启动、停止并检查本地 reverse 服务；关闭后，你需要自己先把 reverse 服务运行起来，插件只负责接入和会话绑定。"
+  },
+  "host": {
+    "description": "reverse 服务监听地址",
+    "type": "string",
+    "default": "127.0.0.1",
+    "hint": "一般保持默认的 127.0.0.1 即可，表示只允许本机访问。除非你明确需要让其他设备访问，否则不用修改。"
+  },
+  "port": {
+    "description": "reverse 服务端口",
+    "type": "int",
+    "default": 8000,
+    "hint": "AstrBot 会通过这个端口连接 Gemini reverse。默认 8000 通常够用；如果端口被占用，再改成其他端口。"
+  },
+  "model": {
+    "description": "默认使用的 Gemini 模型",
+    "type": "string",
+    "default": "gemini-3.1-pro",
+    "hint": "决定这个 reverse provider 默认请求哪个 Gemini 模型。只有在你明确要切换模型版本时才需要修改。"
+  },
+  "provider_id": {
+    "description": "AstrBot 中的 Provider ID",
+    "type": "string",
+    "default": "gemini_reverse",
+    "hint": "这是插件自动维护的 provider 唯一标识。一般不用改；只有你想同时保留多个 Gemini reverse provider 时，才需要改成不同的 ID。"
+  },
+  "provider_name": {
+    "description": "Provider 显示名称",
+    "type": "string",
+    "default": "Gemini Reverse",
+    "hint": "这是 AstrBot 面板里显示给你看的名字，只影响展示和识别，不影响实际连接逻辑。"
+  },
+  "proxy": {
+    "description": "网络代理地址",
+    "type": "string",
+    "default": "",
+    "hint": "如果你的电脑访问 Gemini 需要代理，就在这里填写代理地址；不需要代理时留空。示例：http://127.0.0.1:7890 或 socks5://127.0.0.1:7890"
+  },
+  "session_db_path": {
+    "description": "会话数据库文件路径",
+    "type": "string",
+    "default": "",
+    "hint": "用于保存“逻辑会话和 Gemini 网页窗口”的绑定关系。留空时使用插件默认路径；只有你想迁移、备份或手动指定位置时才需要填写。"
+  },
+  "log_dir": {
+    "description": "日志目录",
+    "type": "string",
+    "default": "",
+    "hint": "reverse 服务的日志会写到这里。留空时使用插件默认目录；只有你想把日志放到其他位置时才需要改。"
+  },
+  "debug_mode": {
+    "description": "是否开启调试模式",
+    "type": "bool",
+    "default": false,
+    "hint": "平时建议关闭。只有在排查问题、需要更详细日志时再开启。"
+  },
+  "healthcheck_interval_sec": {
+    "description": "健康检查超时时间（秒）",
+    "type": "int",
+    "default": 5,
+    "hint": "插件在启动服务、执行 status 或 doctor 时，最多等待这么多秒来判断服务是否正常。一般保持默认值即可。"
+  },
+  "accounts": {
+    "description": "Gemini 多账号 Cookie 列表",
+    "type": "template_list",
+    "default": [],
+    "hint": "在这里按需新增多个 Gemini 账号。每个账号只需要粘贴一整段浏览器 Cookie，插件会自动提取需要的字段并接入多账号轮换。",
+    "templates": {
+      "cookie_account": {
+        "name": "Gemini 账号",
+        "hint": "一个条目就是一个 Gemini 网页账号。需要多个账号时，继续点击新增即可。",
+        "items": {
+          "cookie": {
+            "description": "浏览器 Cookie",
+            "type": "text",
+            "default": "",
+            "hint": "把浏览器里复制出来的整段 Cookie 原样粘贴到这里即可，不需要手动拆字段。"
+          }
+        }
+      }
+    }
+  }
+}

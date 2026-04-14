@@ -1,0 +1,5 @@
+name: astrbot_plugin_gemini_reverse
+desc: "Gemini reverse provider plugin for AstrBot"
+author: "zlj"
+version: "0.1.0"
+repo: "local"
