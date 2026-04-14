@@ -1,11 +1,39 @@
 from __future__ import annotations
 
 import json
+import asyncio
+import sys
+import subprocess
 from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
+
+# =====================================================================
+# [新增] 自动依赖检查与安装逻辑
+# 在 AstrBot 加载此模块时，拦截 ImportError 并自动向当前虚拟环境注入依赖
+# =====================================================================
+def _ensure_deps():
+    try:
+        import fastapi
+        import uvicorn
+        import httpx
+        import gemini_webapi # 增加对核心库的检测
+    except ImportError:
+        logger.info("[gemini_reverse] 检测到缺失后端依赖，正在自动安装 (fastapi, uvicorn, httpx, gemini_webapi)...")
+        try:
+            # sys.executable 指向当前 AstrBot 正在使用的 Python 解释器
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", 
+                "fastapi", "uvicorn", "httpx", "gemini_webapi"
+            ])
+            logger.info("[gemini_reverse] 🚀 依赖自动安装成功！")
+        except Exception as e:
+            logger.error(f"[gemini_reverse] ❌ 依赖自动安装失败，错误详情: {e}")
+# 模块加载时立即执行自检
+_ensure_deps()
+# =====================================================================
 
 from .reverse_runtime.healthcheck import run_doctor
 from .reverse_runtime.provider_profile import build_provider_profile
@@ -31,21 +59,50 @@ class GeminiReversePlugin(Star):
         self.raw_config = config or {}
         self.runtime_config = resolve_runtime_config(self.raw_config)
         self.service_manager = GeminiReverseServiceManager(plugin_root=Path(__file__).resolve().parent)
+        
+        # 兼容 WebUI 载入插件和保存配置的热重载机制
+        asyncio.create_task(self.bootstrap())
+
+    async def bootstrap(self) -> None:
+        """异步启动流程"""
+        try:
+            # 稍微等待 0.5s 确保上一个实例的 terminate 已经释放了端口，以及管理器完全挂载
+            await asyncio.sleep(0.5) 
+            await self._sync_runtime(start_service=True)
+            logger.info(f"[{PLUGIN_NAME}] 插件初始化/重载完成，后端服务已同步拉起。")
+        except Exception as e:
+            logger.error(f"[{PLUGIN_NAME}] 自动拉起后端服务失败: {e}")
 
     async def _sync_runtime(self, start_service: bool = True) -> None:
         self.runtime_config = resolve_runtime_config(self.raw_config)
         runtime_config_path = write_runtime_config(self.runtime_config)
-        if start_service and self.runtime_config["managed_service"]:
+        
+        if start_service and self.runtime_config.get("managed_service"):
             await self.service_manager.start(self.runtime_config, runtime_config_path)
+            # 给予 Uvicorn 充分的启动与端口绑定时间 (暖机)
+            logger.info(f"[{PLUGIN_NAME}] 正在等待独立后端服务启动并绑定端口...")
+            await asyncio.sleep(3)
+            
         await self._sync_provider()
 
     async def _sync_provider(self) -> dict:
         profile = build_provider_profile(self.runtime_config)
-        existing = await self.context.provider_manager.get_provider_by_id(profile["id"])
+        provider_id = profile["id"]
+        
+        try:
+            # 尝试从上下文获取已存在的提供商
+            existing = await self.context.provider_manager.get_provider_by_id(provider_id)
+        except Exception:
+            existing = None
+            
         if existing:
-            await self.context.provider_manager.update_provider(profile["id"], profile)
+            # [修复核心] 如果存在，直接跳过。不调用 update_provider，防止触发 AstrBot 核心配置重载和模型引用断裂
+            logger.info(f"[{PLUGIN_NAME}] 💎 提供商 [{provider_id}] 已挂载，沿用当前已有配置。")
         else:
+            # 只有在完全没有该提供商（例如第一次安装插件）时才去自动创建
+            logger.info(f"[{PLUGIN_NAME}] 🌟 未找到提供商 [{provider_id}]，正在向 AstrBot 自动注册...")
             await self.context.provider_manager.create_provider(profile)
+            
         return profile
 
     async def _status_payload(self) -> dict:
@@ -64,11 +121,6 @@ class GeminiReversePlugin(Star):
             "model": self.runtime_config["model"],
             "provider_id": self.runtime_config["provider_id"],
         }
-
-    @filter.on_astrbot_loaded()
-    async def on_program_start(self):
-        await self._sync_runtime(start_service=True)
-        logger.info("[gemini_reverse] plugin loaded and runtime synced.")
 
     @filter.on_llm_request()
     async def inject_reverse_session(self, event: AstrMessageEvent, request):
@@ -103,7 +155,7 @@ class GeminiReversePlugin(Star):
             return
 
         if action == "stop":
-            if not self.runtime_config["managed_service"]:
+            if not self.runtime_config.get("managed_service"):
                 yield event.plain_result("managed_service=false，插件当前不接管外部 reverse 服务的停止操作。")
                 return
             status = await self.service_manager.stop(self.runtime_config)
@@ -111,7 +163,7 @@ class GeminiReversePlugin(Star):
             return
 
         if action == "restart":
-            if self.runtime_config["managed_service"]:
+            if self.runtime_config.get("managed_service"):
                 await self.service_manager.stop(self.runtime_config)
             runtime_config_path = write_runtime_config(self.runtime_config)
             status = await self.service_manager.start(self.runtime_config, runtime_config_path)
@@ -132,6 +184,14 @@ class GeminiReversePlugin(Star):
             "用法: /gemini_reverse [status|start|stop|restart|doctor|provider_profile]"
         )
 
-    async def terminate(self):
-        if self.runtime_config["managed_service"]:
-            await self.service_manager.stop(self.runtime_config)
+async def terminate(self):
+        """当插件被重载、卸载或停用时调用，在此处完成旧进程的安全清理"""
+        logger.info(f"[{PLUGIN_NAME}] 收到卸载/重载信号，正在清理资源并中止后端进程...")
+        if self.runtime_config.get("managed_service"):
+            try:
+                await self.service_manager.stop(self.runtime_config)
+            except AttributeError:
+                # 忽略因频繁重载导致底层进程尚未初始化完毕的空指针异常
+                pass
+            except Exception as e:
+                logger.debug(f"[{PLUGIN_NAME}] 停止旧服务时遇到可忽略的错误: {e}")
