@@ -25,6 +25,8 @@ DEFAULT_RUNTIME_CONFIG = {
     "debug_mode": False,
     "accounts": {},
     "proxy": "",
+    "stream_first_chunk_timeout_sec": 45,
+    "stream_idle_timeout_sec": 45,
 }
 # 全局挂载的 AuthManager 单例实例
 AUTH_MANAGER = None

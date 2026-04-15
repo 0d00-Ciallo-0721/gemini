@@ -12,3 +12,112 @@ INFO:     Waiting for application startup.
 2026-04-14 10:57:02.500 | SUCCESS  | gemini_webapi.client:init:234 - Gemini client initialized successfully.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started server process [15848]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "D:\py2024\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\py2024\Lib\contextlib.py", line 204, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\main.py", line 70, in lifespan
+    await gemini_conn.initialize()
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\api_client.py", line 24, in initialize
+    acc_data = get_current_account_data()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\config.py", line 98, in get_current_account_data
+    raise RuntimeError("No Gemini accounts configured")
+RuntimeError: No Gemini accounts configured
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Started server process [24456]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "D:\py2024\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\py2024\Lib\contextlib.py", line 204, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\main.py", line 70, in lifespan
+    await gemini_conn.initialize()
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\api_client.py", line 24, in initialize
+    acc_data = get_current_account_data()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\config.py", line 98, in get_current_account_data
+    raise RuntimeError("No Gemini accounts configured")
+RuntimeError: No Gemini accounts configured
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Started server process [356]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "D:\py2024\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\py2024\Lib\contextlib.py", line 204, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\main.py", line 70, in lifespan
+    await gemini_conn.initialize()
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\api_client.py", line 24, in initialize
+    acc_data = get_current_account_data()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\config.py", line 98, in get_current_account_data
+    raise RuntimeError("No Gemini accounts configured")
+RuntimeError: No Gemini accounts configured
+
+ERROR:    Application startup failed. Exiting.
+
+INFO:     Started server process [12432]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "D:\py2024\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\py2024\Lib\contextlib.py", line 204, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\main.py", line 70, in lifespan
+    await gemini_conn.initialize()
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\api_client.py", line 24, in initialize
+    acc_data = get_current_account_data()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\config.py", line 98, in get_current_account_data
+    raise RuntimeError("No Gemini accounts configured")
+RuntimeError: No Gemini accounts configured
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Started server process [11356]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "D:\py2024\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\py2024\Lib\contextlib.py", line 204, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\main.py", line 70, in lifespan
+    await gemini_conn.initialize()
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\api_client.py", line 24, in initialize
+    acc_data = get_current_account_data()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\config.py", line 98, in get_current_account_data
+    raise RuntimeError("No Gemini accounts configured")
+RuntimeError: No Gemini accounts configured
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Started server process [3564]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "D:\py2024\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "D:\py2024\Lib\contextlib.py", line 204, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\main.py", line 70, in lifespan
+    await gemini_conn.initialize()
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\api_client.py", line 24, in initialize
+    acc_data = get_current_account_data()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zlj\Desktop\llm\gemini\bundled_gemini\config.py", line 98, in get_current_account_data
+    raise RuntimeError("No Gemini accounts configured")
+RuntimeError: No Gemini accounts configured
+
+ERROR:    Application startup failed. Exiting.

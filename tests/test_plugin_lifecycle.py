@@ -29,6 +29,8 @@ async def test_plugin_hot_reload_survives():
     context_mock.provider_manager = MagicMock()
     context_mock.provider_manager.get_provider_by_id = AsyncMock(return_value=None)
     context_mock.provider_manager.create_provider = AsyncMock()
+    context_mock.provider_manager.providers_config = []
+    context_mock.provider_manager.delete_provider = AsyncMock()
     
     plugin = GeminiReversePlugin(context_mock, config={"managed_service": True})
     
@@ -44,5 +46,52 @@ async def test_plugin_hot_reload_survives():
     await plugin.terminate()
     plugin.service_manager.stop.assert_called_once()
     
+    sys.modules.pop("astrbot_plugin_gemini_reverse", None)
+    sys.modules.pop("astrbot_plugin_gemini_reverse.main", None)
+
+
+@pytest.mark.asyncio
+async def test_plugin_cleans_legacy_gemini_reverse_source_providers():
+    from unittest.mock import patch, MagicMock, AsyncMock
+
+    import sys
+    import importlib.util
+    from pathlib import Path
+
+    plugin_dir = Path(__file__).parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "astrbot_plugin_gemini_reverse",
+        str(plugin_dir / "main.py"),
+        submodule_search_locations=[str(plugin_dir)]
+    )
+    main_mod = importlib.util.module_from_spec(spec)
+    sys.modules["astrbot_plugin_gemini_reverse"] = main_mod
+    spec.loader.exec_module(main_mod)
+    GeminiReversePlugin = main_mod.GeminiReversePlugin
+
+    context_mock = MagicMock()
+    context_mock.provider_manager = MagicMock()
+    context_mock.provider_manager.get_provider_by_id = AsyncMock(return_value=None)
+    context_mock.provider_manager.create_provider = AsyncMock()
+    context_mock.provider_manager.delete_provider = AsyncMock()
+    context_mock.provider_manager.providers_config = [
+        {"id": "gemini_reverse_source/gemini-3-pro"},
+        {"id": "gemini_reverse_source/gemini-3.1-pro"},
+        {"id": "gemini_reverse"},
+    ]
+
+    plugin = GeminiReversePlugin(context_mock, config={"managed_service": False})
+    plugin.service_manager.start = AsyncMock()
+    plugin.service_manager.stop = AsyncMock()
+
+    await plugin._bootstrap_task
+
+    deleted_ids = [call.kwargs["provider_id"] for call in context_mock.provider_manager.delete_provider.await_args_list]
+    assert deleted_ids == [
+        "gemini_reverse_source/gemini-3-pro",
+        "gemini_reverse_source/gemini-3.1-pro",
+    ]
+
+    await plugin.terminate()
     sys.modules.pop("astrbot_plugin_gemini_reverse", None)
     sys.modules.pop("astrbot_plugin_gemini_reverse.main", None)

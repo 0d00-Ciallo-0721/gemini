@@ -526,3 +526,68 @@
 {"type": "stream_event", "kind": "tool_call_finalized", "tool_name": "read", "time": "2026-04-06T02:30:00.527585"}
 {"type": "request", "model": "gemini-3.1-pro", "account": "1", "has_tools": true, "tool_count": 31, "tool_names": ["question", "bash", "read", "glob", "grep", "edit", "write", "task", "webfetch", "todowrite", "skill", "lsp_goto_definition", "lsp_find_references", "lsp_symbols", "lsp_diagnostics", "lsp_prepare_rename", "lsp_rename", "ast_grep_search", "ast_grep_replace", "session_list", "session_read", "session_search", "session_info", "background_output", "background_cancel", "look_at", "skill_mcp", "websearch_web_search_exa", "grep_app_searchGitHub", "context7_resolve-library-id", "context7_query-docs"], "msg_count": 24, "prompt_chars": 457, "msg_roles": ["system", "user", "assistant", "tool", "assistant", "user", "assistant", "tool", "assistant", "user", "assistant", "user", "assistant", "tool", "assistant", "tool", "assistant", "tool", "assistant", "tool", "assistant", "tool", "assistant", "tool"], "time": "2026-04-06T02:30:03.319153"}
 {"type": "stream_event", "kind": "tool_call_finalized", "tool_name": "write", "time": "2026-04-06T02:30:15.293893"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:46:03.636013"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:46:03.636013"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T00:46:03.636523"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:46:03.639580"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:46:03.639580"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:46:59.899277"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:46:59.899277"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T00:46:59.899795"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:46:59.902940"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:46:59.903450"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:48:22.371274"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:48:22.371274"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T00:48:22.371274"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:48:22.373791"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:48:22.373791"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:53:07.357558"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:53:07.357558"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T00:53:07.358068"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:53:07.360626"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:53:07.361137"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:53:52.960290"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:53:52.960290"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T00:53:52.961797"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T00:53:52.964834"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T00:53:52.964834"}
+{"type": "error", "error": "Init failed: 'RequestLogger' object has no attribute 'log_info'", "context": "init", "time": "2026-04-15T01:04:40.834577"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:04:41.071328"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:04:41.071328"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T01:04:41.072347"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:04:41.075397"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:04:41.075397"}
+{"type": "error", "error": "Init failed: 'RequestLogger' object has no attribute 'log_info'", "context": "init", "time": "2026-04-15T01:04:56.919057"}
+{"type": "error", "error": "Init failed: 'RequestLogger' object has no attribute 'log_info'", "context": "init", "time": "2026-04-15T01:05:33.387478"}
+{"type": "error", "error": "Init failed: 'RequestLogger' object has no attribute 'log_info'", "context": "init", "time": "2026-04-15T01:06:08.475234"}
+{"type": "info", "msg": "Account  initialized smoothly!", "context": "", "time": "2026-04-15T01:06:55.215102"}
+{"type": "info", "msg": "Account  initialized smoothly!", "context": "", "time": "2026-04-15T01:08:21.961015"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:08:21.963034"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:08:21.963034"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T01:08:21.964542"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:08:21.967081"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:08:21.967081"}
+{"type": "info", "msg": "Account  initialized smoothly!", "context": "", "time": "2026-04-15T01:10:21.528557"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:10:21.532325"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:10:21.532325"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T01:10:21.532325"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:10:21.536151"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:10:21.536151"}
+{"type": "info", "msg": "Account  initialized smoothly!", "context": "", "time": "2026-04-15T01:12:14.975616"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:12:14.979423"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:12:14.979423"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T01:12:14.979934"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:12:14.982491"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:12:14.983013"}
+{"type": "info", "msg": "Account  initialized smoothly!", "context": "", "time": "2026-04-15T01:12:45.456928"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:12:45.460561"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:12:45.460561"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T01:12:45.460561"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:12:45.464581"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:12:45.464581"}
+{"type": "info", "msg": "Account  initialized smoothly!", "context": "", "time": "2026-04-15T01:23:04.494231"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:23:04.496765"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:23:04.498239"}
+{"type": "error", "error": "刷新成功，重新尝试请求...", "context": "auth", "time": "2026-04-15T01:23:04.498239"}
+{"type": "error", "error": "账号 relay_active 认证失败", "context": "generate_with_failover", "time": "2026-04-15T01:23:04.500743"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T01:23:04.500743"}

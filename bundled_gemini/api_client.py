@@ -6,17 +6,39 @@ from gemini_webapi.exceptions import AuthError, UsageLimitExceeded
 
 from .config import ACCOUNTS, PROXIES, get_current_credentials, state
 from .logger import request_logger
+from .exceptions import ProxyException, ModelNotSupportedError, AuthInvalidError, NetworkOrProxyError, GoogleSilentAbortError, UnknownUpstreamError, UpstreamQueueTimeoutError
+
 
 class ContextMigrationNeeded(Exception):
     """当账号发生轮换，当前物理 ChatSession 失效时抛出的特定信号，通知上层进行全量上下文重建"""
     pass
 
 
+
+def _map_upstream_error(e: Exception):
+    if isinstance(e, ProxyException):
+        return e
+    err_str = str(e).lower()
+    if isinstance(e, AuthError) or "token" in err_str or "cookie" in err_str:
+        return AuthInvalidError(str(e))
+    elif "model" in err_str and ("unknown" in err_str or "not found" in err_str or "invalid" in err_str):
+        return ModelNotSupportedError(str(e))
+    elif "aborted by google" in err_str or "silently aborted" in err_str:
+        return GoogleSilentAbortError(str(e))
+    elif "queue_timeout" in err_str:
+        return UpstreamQueueTimeoutError(str(e))
+    elif "connect" in err_str or "timeout" in err_str or "proxy" in err_str or "dns" in err_str:
+        return NetworkOrProxyError(str(e))
+    return UnknownUpstreamError(str(e))
+
 class GeminiConnection:
     """封装底层的 Gemini 客户端连接，支持账号池自动轮换"""
 
     def __init__(self):
         self.client: GeminiClient = None
+        self.last_request_error = None
+        self.last_request_error_type = None
+        self.last_refresh_result = None
 
     async def initialize(self):
         """初始化网络连接和身份验证"""
@@ -26,8 +48,12 @@ class GeminiConnection:
         acc_data = get_current_account_data()
         psid = acc_data.get("SECURE_1PSID", getattr(acc_data, "get", lambda k,d: d)("__Secure-1PSID", ""))
         psidts = acc_data.get("SECURE_1PSIDTS", getattr(acc_data, "get", lambda k,d: d)("__Secure-1PSIDTS", ""))
-        
         # 2. 构建基础客户端实例
+        if PROXIES:
+            request_logger.log_info(f"代理就绪: proxy={PROXIES}  [当前配置模型: {state.active_model} | 当前活跃池: {state.active_account}]")
+        else:
+            request_logger.log_info(f"代理就绪: proxy=disabled  [当前配置模型: {state.active_model} | 当前活跃池: {state.active_account}]")
+        
         self.client = GeminiClient(psid, psidts, proxy=PROXIES)
         
         # 3. 注入完整 Cookie 视图
@@ -140,6 +166,7 @@ class GeminiConnection:
                     request_logger.log_error("正在尝试刷新 Relay 长期饭票...", context="auth")
                     
                     refreshed = await refresh_active_ticket(AUTH_MANAGER, self.client)
+                    self.last_refresh_result = refreshed
                     if refreshed:
                         AUTH_MANAGER.set_fallback_state(False)
                         from .config import reload_runtime_config
@@ -159,6 +186,12 @@ class GeminiConnection:
                 switched = await self._switch_account("认证失效导致自动轮换兜底")
                 if not switched:
                     raise AuthError("系统已被降级但无其他存活备用账号可用！")
+            except Exception as e:
+                mapped_e = _map_upstream_error(e)
+                self.last_request_error = str(e)
+                self.last_request_error_type = mapped_e.error_type
+                raise mapped_e
+
 
     async def stream_with_failover(self, prompt: str, model: str, files=None, chat=None):
         """
@@ -175,10 +208,48 @@ class GeminiConnection:
                     if not success:
                         raise ConnectionError(f"客户端初始化失败: {msg}")
 
-                async for chunk in self.client.generate_content_stream(prompt, model=model, files=files, chat=chat):
-                    yield chunk
+                import asyncio
+                from .config import RUNTIME_CONFIG
                 
-                return  # 成功完成流式输出，安全退出
+                stream_iter = self.client.generate_content_stream(prompt, model=model, files=files, chat=chat)
+                if hasattr(stream_iter, "__aiter__"):
+                    aiter = stream_iter.__aiter__()
+                else:
+                    aiter = stream_iter
+                
+                queue_timeout = RUNTIME_CONFIG.get("stream_first_chunk_timeout_sec", 45)
+                idle_timeout = RUNTIME_CONFIG.get("stream_idle_timeout_sec", queue_timeout)
+                
+                try:
+                    # 强验证首包
+                    first_chunk = await asyncio.wait_for(aiter.__anext__(), timeout=queue_timeout)
+                    yield first_chunk
+                except asyncio.TimeoutError:
+                    err_msg = f"queue_timeout: 超过首包最长等待时限 ({queue_timeout}s)，Google 长时间排队或静默。请求被终止。"
+                    request_logger.log_error(f"[{state.active_model}] 上游请求首包超时: {err_msg}", "stream")
+                    raise UpstreamQueueTimeoutError(err_msg)
+                except StopAsyncIteration:
+                    return # 对方直接关门了
+                
+                # 延续正常遍历模式
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(aiter.__anext__(), timeout=idle_timeout)
+                        yield chunk
+                    except asyncio.TimeoutError:
+                        err_msg = (
+                            f"queue_timeout: 首包后超过最大空闲等待时限 ({idle_timeout}s)，"
+                            "Google 长时间排队或静默。请求被终止。"
+                        )
+                        request_logger.log_error(
+                            f"[{state.active_model}] 上游请求流式空闲超时: {err_msg}",
+                            "stream",
+                        )
+                        raise UpstreamQueueTimeoutError(err_msg)
+                    except StopAsyncIteration:
+                        break
+                        
+                return
 
             except UsageLimitExceeded:
                 request_logger.log_error(f"账号 {state.active_account} 额度耗尽", context="stream")
@@ -198,6 +269,7 @@ class GeminiConnection:
                     from reverse_runtime.ticket_refresher import refresh_active_ticket
                     self._stream_refresh_tried = True
                     refreshed = await refresh_active_ticket(AUTH_MANAGER, self.client)
+                    self.last_refresh_result = refreshed
                     if refreshed:
                         AUTH_MANAGER.set_fallback_state(False)
                         request_logger.log_error("流式生成期间刷新长期饭票成功，继续当前逻辑会话。", context="stream")
@@ -216,6 +288,13 @@ class GeminiConnection:
                     raise AuthError("所有账号均不可用！")
                     
                 raise ContextMigrationNeeded("账号已自动轮换，当前物理窗口失效，请求全量重建。")
+
+            except Exception as e:
+                mapped_e = _map_upstream_error(e)
+                self.last_request_error = str(e)
+                self.last_request_error_type = mapped_e.error_type
+                raise mapped_e
+
 
 
 # 导出单例实例

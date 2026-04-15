@@ -1,4 +1,4 @@
-# main.py
+﻿# main.py
 # Gemini 本地代理服务器 — OpenAI API 兼容层（工具调用版）
 # 支持 Claude Code / Cline / Continue / Cursor 等 AI 编程工具
 
@@ -37,7 +37,7 @@ def _safe_print(*args, **kwargs):
 builtins.print = _safe_print
 
 from .api_client import ContextMigrationNeeded, gemini_conn
-from .config import ACCOUNTS, get_runtime_config, state
+from .config import ACCOUNTS, PROXIES, get_runtime_config, state
 from .context_manager import context_manager
 from .logger import request_logger
 from .tool_adapter import build_tool_aware_prompt
@@ -59,20 +59,32 @@ NON_STREAM_TIMEOUT = 300     # 非流式模式的整体超时秒数，从 120 �
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("\n" + "="*60)
-    print("🚀 Gemini 本地代理 (工具调用版) 启动中...")
-    print(f"   模型: {state.active_model}")
-    print(f"   账号池: {len(ACCOUNTS)} 个账号")
+    print("\n" + "=" * 60)
+    print("Gemini ??????????????...")
+    print(f"   ??: {state.active_model}")
+    from .config import PROXIES, get_current_account_data
+    print(f"   ???: {len(ACCOUNTS)} ??? ({state.active_account})")
+    print(f"   ????: {PROXIES if PROXIES else 'disabled'}")
+
+    auth_data = get_current_account_data() if state.active_account else {}
+    psid = auth_data.get("SECURE_1PSID", auth_data.get("__Secure-1PSID", ""))
+    has_target = bool(psid)
+    print(
+        f"   ????: {'????? Cookie' if has_target else '??????'} "
+        f"(????: {len(auth_data.get('cookies_dict', {}))} ?)"
+    )
+
     runtime_config = get_runtime_config()
-    print(f"   端口: {runtime_config.get('port', 8000)}")
+    print(f"   ??: {runtime_config.get('port', 8000)}")
     request_logger.reconfigure(str(runtime_config.get("log_dir") or "logs"))
     session_manager.set_db_path(str(runtime_config.get("session_db_path") or "reverse_sessions.sqlite3"))
     await gemini_conn.initialize()
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
     yield
-    print("👋 安全断开连接...")
+    print("??????...")
     request_logger.close()
     await gemini_conn.close()
+
 
 app = FastAPI(title="Gemini Local Proxy API", lifespan=lifespan)
 
@@ -290,18 +302,25 @@ async def _generate_with_retry(prompt_text: str, tools: list,
 
 @app.get("/v1/models")
 async def list_models():
-    """列出可用模型"""
+    """列出可用模型 (内置真实列表 + 兜底)"""
+    try:
+        from gemini_webapi.constants import Model
+        models = [v.value[0] for v in Model if v.value[0] and v.value[0] != "unspecified"]
+    except Exception:
+        models = [state.active_model]
+        
+    if state.active_model not in models:
+        models.append(state.active_model)
+        
     return JSONResponse({
         "object": "list",
         "data": [{
-            "id": state.active_model,
+            "id": m,
             "object": "model",
             "created": int(time.time()),
-            "owned_by": "google"
-        }]
+            "owned_by": "google/gemini_webapi"
+        } for m in models]
     })
-
-
 
 # ==========================================
 # 函数位置: main.py
@@ -600,7 +619,17 @@ async def chat_completions(request: Request):
                     break
 
                 except Exception as e:
+                    from .exceptions import ProxyException
                     err_str = str(e) or repr(e)
+                    error_type = e.error_type if isinstance(e, ProxyException) else "UNKNOWN_ERROR"
+                    print(f"❌ 流式报错 [{error_type}]: {err_str}")
+                    request_logger.log_error(
+                        f"[{error_type}] {err_str}\n[模型: {state.active_model} | 代理: {PROXIES or 'disabled'}]",
+                        "stream",
+                    )
+                    yield make_sse_text_delta(f"\n⚠️ [Gemini Proxy Error | {error_type}]: {err_str}", chunk_id)
+                    yield make_sse_done("stop", chunk_id)
+                    break
                     request_logger.log_error(err_str, "stream")
                     print(f"❌ 流式报错: {err_str}")
                     yield make_sse_text_delta(f"\n⚠️ [Gemini Proxy Error]: {err_str}", chunk_id)
@@ -690,9 +719,14 @@ async def chat_completions(request: Request):
                     request_logger.log_error("所有账号额度耗尽", "sync")
                     return make_sync_response("🛑 所有账号额度已耗尽！请更新账号或等待重置。")
                 except Exception as e:
-                    request_logger.log_error(str(e), "sync")
-                    print(f"❌ 非流式报错: {e}")
-                    return JSONResponse({"error": str(e)}, status_code=500)
+                    from .exceptions import ProxyException
+                    error_type = e.error_type if isinstance(e, ProxyException) else "UNKNOWN_ERROR"
+                    request_logger.log_error(
+                        f"[{error_type}] {str(e)}\n[模型: {state.active_model} | 代理: {PROXIES or 'disabled'}]",
+                        "sync",
+                    )
+                    print(f"❌ 非流式报错 [{error_type}]: {e}")
+                    return JSONResponse({"error": str(e), "error_type": error_type}, status_code=500)
         finally:
             # 无论外层抛出错误还是成功返回（return），都安全清理最终的物理附件资源
             if extracted_files:
@@ -806,13 +840,43 @@ async def debug_logs():
 @app.get("/v1/debug/status")
 async def debug_status():
     """系统运维监控：探活当前 Uvicorn 进程池和连接活跃度"""
+    from .config import PROXIES, get_current_account_data
+    auth_data = getattr(get_current_account_data, '__call__', lambda: ACCOUNTS.get(state.active_account, {}))() if state.active_account else {}
     return JSONResponse({
         "status": "running",
-        "model": state.active_model,
-        "account": state.active_account,
+        "active_model": state.active_model,
+        "proxy": PROXIES or "disabled",
+        "has_active_ticket": bool(auth_data),
+        "active_account": state.active_account,
+        "has_psid": bool(auth_data.get('SECURE_1PSID') or auth_data.get('__Secure-1PSID')),
+        "has_psidts": bool(auth_data.get('SECURE_1PSIDTS') or auth_data.get('__Secure-1PSIDTS')),
+        "cookies_dict_count": len(auth_data.get('cookies_dict', {})),
         "client_ready": gemini_conn.client is not None,
         "accounts_total": len(ACCOUNTS),
+        "last_refresh_result": getattr(gemini_conn, "last_refresh_result", None),
+        "last_request_error": getattr(gemini_conn, "last_request_error", None),
+        "last_request_error_type": getattr(gemini_conn, "last_request_error_type", None)
     })
+
+@app.get("/v1/debug/network")
+async def debug_network():
+    """代理与出口环回侦测，供排障时分析代理是否真实穿透"""
+    from .config import PROXIES
+    is_client_set = False
+    if gemini_conn.client and getattr(gemini_conn.client, "proxy", None):
+        is_client_set = True
+        
+    return JSONResponse({
+        "runtime_proxy_value": PROXIES or "",
+        "is_proxy_configured": bool(PROXIES),
+        "is_client_initialized_with_proxy": is_client_set,
+        "client_proxy_value": getattr(gemini_conn.client, "proxy", None),
+        "active_model": state.active_model,
+        "active_account": state.active_account,
+        "diagnostic_msg": "代理设定已于当前生命周期内生效" if is_client_set else "代理值为空或客户端未重置加载"
+    })
+
+
 
 
 # ---------------------------------------------------------------------

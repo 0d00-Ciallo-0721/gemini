@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import asyncio
@@ -51,7 +51,7 @@ class GeminiReversePlugin(Star):
     # 阶段 2：生命周期启动
     # =====================================================================
     @filter.on_astrbot_loaded()
-    async def on_loaded(self, event):
+    async def on_loaded(self):
         """AstrBot 官方标准生命周期启动入口"""
         await self._bootstrap_once()
 
@@ -71,6 +71,31 @@ class GeminiReversePlugin(Star):
     async def _sync_runtime(self, start_service: bool = True) -> None:
         """根据当前态全量刷新运行时配置，并托管拉起真正的业务子进程"""
         self.runtime_config = resolve_runtime_config(self.raw_config)
+        
+        # 嗅探并接管 bootstrap_cookie
+        bootstrap_cookie = str(self.raw_config.get("bootstrap_cookie") or "").strip()
+        if bootstrap_cookie:
+            import time
+            from .update_cookie import standardize_cookie_payload
+            from .reverse_runtime.auth_status import AuthStatus
+            
+            current_ticket = self.auth_manager.store.load_active_ticket()
+            if not current_ticket or current_ticket.get("bootstrap_source") != bootstrap_cookie:
+                logger.info(f"[{PLUGIN_NAME}] 检测到新的 bootstrap_cookie，正在接管为长期凭证...")
+                payload = standardize_cookie_payload(bootstrap_cookie, default_label="bootstrap")
+                if payload:
+                    ticket = {
+                        "cookie_data": payload,
+                        "push_time": time.time(),
+                        "last_refresh_time": time.time(),
+                        "client_id": "bootstrap",
+                        "status": AuthStatus.HEALTHY.value,
+                        "bootstrap_source": bootstrap_cookie
+                    }
+                    self.auth_manager.store.save_active_ticket(ticket)
+                    self.auth_manager.transition_state(AuthStatus.HEALTHY, "Imported from bootstrap_cookie")
+                    logger.info(f"[{PLUGIN_NAME}] 导入完成，已接管后续动态刷新生命周期。")
+
         runtime_config_path = write_runtime_config(self.runtime_config)
         
         if start_service and self.runtime_config.get("managed_service"):
@@ -79,7 +104,32 @@ class GeminiReversePlugin(Star):
             logger.info(f"[{PLUGIN_NAME}] 正在等待独立后端服务启动并绑定端口...")
             await asyncio.sleep(3)
             
+        await self._cleanup_legacy_source_providers()
         await self._sync_provider()
+
+    async def _cleanup_legacy_source_providers(self) -> None:
+        """清理旧版 gemini_reverse_source/* provider 残留，避免 AstrBot 继续加载失效 source。"""
+        provider_manager = getattr(self.context, "provider_manager", None)
+        if not provider_manager:
+            return
+
+        providers_config = list(getattr(provider_manager, "providers_config", []) or [])
+        delete_provider = getattr(provider_manager, "delete_provider", None)
+        if not providers_config or not callable(delete_provider):
+            return
+
+        legacy_ids = []
+        for provider in providers_config:
+            provider_id = str((provider or {}).get("id") or "").strip()
+            if provider_id.startswith("gemini_reverse_source/"):
+                legacy_ids.append(provider_id)
+
+        for legacy_id in legacy_ids:
+            try:
+                await delete_provider(provider_id=legacy_id)
+                logger.info(f"[{PLUGIN_NAME}] 检测并清理旧版 source provider 残留: {legacy_id}")
+            except Exception as e:
+                logger.warning(f"[{PLUGIN_NAME}] 清理旧版 source provider 残留失败 {legacy_id}: {e}")
 
     async def _sync_provider(self) -> dict:
         """维护当前 provider 至 AstrBot 核心引擎进行挂载同步"""

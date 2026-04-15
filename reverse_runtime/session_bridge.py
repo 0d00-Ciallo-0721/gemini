@@ -72,7 +72,7 @@ def resolve_runtime_config(raw_config: dict[str, Any] | None, auth_manager=None)
         "cookie_accounts": cookie_accounts,
         "accounts": normalized_accounts,
         "runtime_config_path": str(plugin_data_dir / "runtime_config.json"),
-        "auth_mode": str(config.get("auth_mode", "relay_ticket")),
+        "auth_mode": "relay_ticket",
 
         "relay_shared_secret": str(config.get("relay_shared_secret", "change_me_to_a_random_string")),
         "relay_primary_client_id": str(config.get("relay_primary_client_id", "my_desktop")),
