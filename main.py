@@ -1,41 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import asyncio
-import sys
-import subprocess
 from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
-# =====================================================================
-# [新增] 自动依赖检查与安装逻辑
-# 在 AstrBot 加载此模块时，拦截 ImportError 并自动向当前虚拟环境注入依赖
-# =====================================================================
-def _ensure_deps():
-    try:
-        import fastapi
-        import uvicorn
-        import httpx
-        import gemini_webapi # 增加对核心库的检测
-    except ImportError:
-        logger.info("[gemini_reverse] 检测到缺失后端依赖，正在自动安装 (fastapi, uvicorn, httpx, gemini_webapi)...")
-        try:
-            # sys.executable 指向当前 AstrBot 正在使用的 Python 解释器
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", 
-                "fastapi", "uvicorn", "httpx", "gemini_webapi"
-            ])
-            logger.info("[gemini_reverse] 🚀 依赖自动安装成功！")
-        except Exception as e:
-            logger.error(f"[gemini_reverse] ❌ 依赖自动安装失败，错误详情: {e}")
-# 模块加载时立即执行自检
-_ensure_deps()
-# =====================================================================
-
 from .reverse_runtime.healthcheck import run_doctor
+from .reverse_runtime.auth_manager import AuthManager
 from .reverse_runtime.provider_profile import build_provider_profile
 from .reverse_runtime.service_manager import GeminiReverseServiceManager
 from .reverse_runtime.session_bridge import (
@@ -55,25 +29,47 @@ from .reverse_runtime.session_bridge import (
 )
 class GeminiReversePlugin(Star):
     def __init__(self, context: Context, config: dict | None = None) -> None:
+        """
+        阶段 1：插件初始化
+        只做只读配置的拼装和底层对象挂载，不触发繁重的副作用。
+        """
         super().__init__(context)
         self.raw_config = config or {}
+        # runtime_config: 核心状态隔离层，提供给后端服务的真实配置大盘
         self.runtime_config = resolve_runtime_config(self.raw_config)
+        # auth_manager: 长期饭票控制面视图
+        self.auth_manager = AuthManager(self.runtime_config["plugin_data_dir"], self.runtime_config)
+        # service_manager: Uvicorn 后端进程托管器
         self.service_manager = GeminiReverseServiceManager(plugin_root=Path(__file__).resolve().parent)
         
-        # 兼容 WebUI 载入插件和保存配置的热重载机制
-        asyncio.create_task(self.bootstrap())
+        # 幂等标记防重复触发
+        self._bootstrapped = False
+        # 兼容 WebUI 热重载场景自举
+        self._bootstrap_task = asyncio.create_task(self._bootstrap_once())
 
-    async def bootstrap(self) -> None:
-        """异步启动流程"""
+    # =====================================================================
+    # 阶段 2：生命周期启动
+    # =====================================================================
+    @filter.on_astrbot_loaded()
+    async def on_loaded(self, event):
+        """AstrBot 官方标准生命周期启动入口"""
+        await self._bootstrap_once()
+
+    async def _bootstrap_once(self) -> None:
+        """幂等的后端同步拉起引擎，支持作为热重载 fallback 与标准加载的双入口"""
+        if self._bootstrapped:
+            return
+        self._bootstrapped = True
         try:
-            # 稍微等待 0.5s 确保上一个实例的 terminate 已经释放了端口，以及管理器完全挂载
+            # 等待旧实例可能存在的 terminate 中止完毕
             await asyncio.sleep(0.5) 
             await self._sync_runtime(start_service=True)
-            logger.info(f"[{PLUGIN_NAME}] 插件初始化/重载完成，后端服务已同步拉起。")
+            logger.info(f"[{PLUGIN_NAME}] 插件初始化完成，Gemini Reverse 原生代理引擎已起步。")
         except Exception as e:
-            logger.error(f"[{PLUGIN_NAME}] 自动拉起后端服务失败: {e}")
+            logger.error(f"[{PLUGIN_NAME}] 自动拉起后端代理服务失败: {e}")
 
     async def _sync_runtime(self, start_service: bool = True) -> None:
+        """根据当前态全量刷新运行时配置，并托管拉起真正的业务子进程"""
         self.runtime_config = resolve_runtime_config(self.raw_config)
         runtime_config_path = write_runtime_config(self.runtime_config)
         
@@ -86,6 +82,7 @@ class GeminiReversePlugin(Star):
         await self._sync_provider()
 
     async def _sync_provider(self) -> dict:
+        """维护当前 provider 至 AstrBot 核心引擎进行挂载同步"""
         profile = build_provider_profile(self.runtime_config)
         provider_id = profile["id"]
         
@@ -106,8 +103,11 @@ class GeminiReversePlugin(Star):
         return profile
 
     async def _status_payload(self) -> dict:
+        """统一管理命令与诊断钩子输出，展示服务健康度全景图"""
         status = await self.service_manager.status(self.runtime_config)
+        auth_view = self.auth_manager.get_auth_view()
         return {
+            "auth": auth_view,
             "managed_service": status.managed,
             "running": status.running,
             "owned_by_plugin": status.owned_by_plugin,
@@ -138,6 +138,9 @@ class GeminiReversePlugin(Star):
             source="astrbot",
         )
 
+    # =====================================================================
+    # 阶段 3：命令处理
+    # =====================================================================
     @filter.command("gemini_reverse")
     async def gemini_reverse_command(self, event: AstrMessageEvent):
         parts = (event.message_str or "").split()
@@ -171,7 +174,7 @@ class GeminiReversePlugin(Star):
             return
 
         if action == "doctor":
-            payload = await run_doctor(self.runtime_config)
+            payload = await run_doctor(self.runtime_config, self.auth_manager)
             yield event.plain_result(json.dumps(payload, ensure_ascii=False, indent=2))
             return
 
@@ -184,7 +187,10 @@ class GeminiReversePlugin(Star):
             "用法: /gemini_reverse [status|start|stop|restart|doctor|provider_profile]"
         )
 
-async def terminate(self):
+    # =====================================================================
+    # 阶段 4：terminate 清理
+    # =====================================================================
+    async def terminate(self):
         """当插件被重载、卸载或停用时调用，在此处完成旧进程的安全清理"""
         logger.info(f"[{PLUGIN_NAME}] 收到卸载/重载信号，正在清理资源并中止后端进程...")
         if self.runtime_config.get("managed_service"):

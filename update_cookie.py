@@ -58,6 +58,57 @@ def normalize_cookie_accounts(cookie_list: list[Any] | None) -> dict[str, dict[s
     return normalized
 
 
+def parse_cookie_string(cookie_text: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for part in cookie_text.split(';'):
+        part = part.strip()
+        if not part or '=' not in part:
+            continue
+        k, v = part.split('=', 1)
+        parsed[k.strip()] = v.strip()
+    return parsed
+
+
+def standardize_cookie_payload(payload: Any, default_label: str = "") -> dict[str, Any] | None:
+    """标准化传入的完整 cookie dict 或 raw cookie 字符串"""
+    if not payload:
+        return None
+        
+    raw_cookie = ""
+    cookies_dict = {}
+    
+    if isinstance(payload, str):
+        raw_cookie = payload.strip()
+        cookies_dict = parse_cookie_string(raw_cookie)
+    elif isinstance(payload, dict):
+        raw_cookie = str(payload.get("cookie") or payload.get("raw_cookie") or "").strip()
+        cookies_dict = payload.get("cookies_dict") or {}
+        if not cookies_dict and raw_cookie:
+            cookies_dict = parse_cookie_string(raw_cookie)
+        elif cookies_dict and not raw_cookie:
+            raw_cookie = "; ".join(f"{k}={v}" for k, v in cookies_dict.items())
+            
+    extracted = extract_cookie_pair(raw_cookie)
+    psid = extracted.get("SECURE_1PSID")
+    psidts = extracted.get("SECURE_1PSIDTS")
+    
+    if not psid or not psidts:
+        return None
+        
+    label = default_label
+    if isinstance(payload, dict) and payload.get("label"):
+        label = str(payload.get("label"))
+        
+    return {
+        "raw_cookie": raw_cookie,
+        "cookie": raw_cookie,
+        "cookies_dict": cookies_dict,
+        "SECURE_1PSID": psid,
+        "SECURE_1PSIDTS": psidts,
+        "label": label,
+    }
+
+
 def patch_runtime_config(runtime_config_path: str | Path, cookie_list: list[Any] | None) -> Path:
     path = Path(runtime_config_path)
     payload = {}

@@ -781,13 +781,15 @@ async def embeddings(request: Request):
     })
 
 
-# ============================================================
-# API 路由 — 调试端点
-# ============================================================
+# =====================================================================
+# API 路由 — 内部运维与调试专用端点 (Admin & Debug)
+# 注意：以下所有 /v1/debug/* 路由均不是给最终外部大模型客户端消费的，
+# 它们专用于 Helper 推送、面板数据获取和脱机排障诊断。
+# =====================================================================
 
 @app.get("/v1/debug/last")
 async def debug_last():
-    """返回最近一次请求的完整 Prompt 和 Gemini 原始输出（仅开发用）"""
+    """诊断用途：返回系统内存拦截到的最近一次 OpenAI 格式原始入参及输出快照"""
     last = request_logger.get_last_request()
     if not last:
         return JSONResponse({"message": "No requests recorded yet"})
@@ -796,14 +798,14 @@ async def debug_last():
 
 @app.get("/v1/debug/logs")
 async def debug_logs():
-    """返回最近 N 条日志（仅开发用）"""
+    """诊断用途：导出内存环形队列中的最近审计日志线"""
     logs = request_logger.get_recent_logs(30)
     return JSONResponse({"count": len(logs), "logs": logs})
 
 
 @app.get("/v1/debug/status")
 async def debug_status():
-    """返回当前服务状态"""
+    """系统运维监控：探活当前 Uvicorn 进程池和连接活跃度"""
     return JSONResponse({
         "status": "running",
         "model": state.active_model,
@@ -813,9 +815,48 @@ async def debug_status():
     })
 
 
-# ============================================================
-# 入口
-# ============================================================
+# ---------------------------------------------------------------------
+# 认证控制面子路由
+# ---------------------------------------------------------------------
+
+@app.post("/v1/debug/auth/push_ticket")
+async def push_ticket(request: Request):
+    """
+    接收来自助手端 (Helper) 上报的一手长期饭票。
+    执行全套签名防伪检验、重放查杀与持久化存储操作。
+    """
+    from .config import AUTH_MANAGER, RUNTIME_CONFIG, reload_runtime_config
+    if not AUTH_MANAGER:
+        return JSONResponse({"error": "Auth Manager not enabled"}, status_code=503)
+    
+    body = await request.json()
+    secret = RUNTIME_CONFIG.get("relay_shared_secret", "change_me_to_a_random_string")
+    
+    from reverse_runtime.ticket_receiver import handle_push_ticket
+    success, msg = handle_push_ticket(AUTH_MANAGER, body, secret)
+    if success:
+        if RUNTIME_CONFIG.get("relay_accept_push_without_restart", True):
+            reload_runtime_config()
+        return JSONResponse({"status": "success", "message": msg})
+    else:
+        return JSONResponse({"status": "error", "message": msg}, status_code=401)
+
+@app.get("/v1/debug/auth/status")
+async def auth_status(request: Request):
+    """
+    统一暴露当前认证机全景快照。被主控插件或 /gemini_reverse doctor 外部探针消费。
+    """
+    from .config import AUTH_MANAGER
+    if not AUTH_MANAGER:
+        return JSONResponse({"error": "Auth Manager not enabled"}, status_code=503)
+    from reverse_runtime.auth_status import get_auth_status_payload
+    return JSONResponse(get_auth_status_payload(AUTH_MANAGER))
+
+
+# =====================================================================
+# 守护进程主入口点
+# 确保采用 Uvicorn 非热重载模式冷暴力托管，不产生副作用。
+# =====================================================================
 
 if __name__ == "__main__":
     if sys.platform == 'win32':

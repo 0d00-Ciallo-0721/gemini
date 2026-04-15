@@ -66,13 +66,61 @@ def check_accounts(accounts: dict[str, dict[str, str]]) -> dict[str, Any]:
     }
 
 
-async def run_doctor(runtime_config: dict[str, Any]) -> dict[str, Any]:
+def check_auth(runtime_config: dict[str, Any], auth_manager: Any = None) -> dict[str, Any]:
+    auth_mode = runtime_config.get("auth_mode", "relay_ticket")
+    result = {
+        "auth_mode": auth_mode,
+        "is_healthy": False,
+        "details": {}
+    }
+    
+    if auth_manager:
+        view = auth_manager.get_auth_view()
+        result["details"] = view
+        result["is_healthy"] = view.get("status") in ("healthy", "fallback")
+        
+        # Read recent 10 auth events
+        recent_events = []
+        try:
+            from .auth_status import AuthStatus
+            if auth_manager.store.auth_history_path.exists():
+                with open(auth_manager.store.auth_history_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    for line in lines[-10:]:
+                        if line.strip():
+                            import json
+                            recent_events.append(json.loads(line))
+        except Exception:
+            pass
+        result["recent_events"] = recent_events
+    else:
+        active = runtime_config.get("active_ticket")
+        result["details"] = {"active_ticket_exists": bool(active), "auth_status": runtime_config.get("auth_status", "unknown")}
+        result["is_healthy"] = bool(active) or (auth_mode == "manual_cookie_pool")
+        
+    return result
+
+
+async def run_doctor(runtime_config: dict[str, Any], auth_manager: Any = None) -> dict[str, Any]:
+    """
+    运维诊断探针入口。
+    返回的结构树严格按以下层级分组：
+    - service: 本地 Reverse 代理进程探活状态（包含监听地址与可用探测）
+    - upstream: 上游 gemini.google.com 的网络可达性与证书有效性
+    - session_db: 本地物理映射表文件读写权限健康度
+    - accounts: 静态兜底账号数据的可用性审计
+    - auth: Relay 长期饭票的核心状态扫描机及最近 10 次相关刷新落盘事件
+    """
+    from .upstream_probe import probe_gemini_upstream
+    
     return {
         "service": await probe_reverse_service(
             runtime_config["host"],
             int(runtime_config["port"]),
             int(runtime_config["healthcheck_interval_sec"]),
         ),
+        "upstream": await probe_gemini_upstream(),
         "session_db": check_session_db(runtime_config["session_db_path"]),
-        "accounts": check_accounts(runtime_config["accounts"]),
+        "accounts": check_accounts(runtime_config.get("fallback_accounts", runtime_config.get("accounts", {}))),
+        "auth": check_auth(runtime_config, auth_manager),
     }
