@@ -54,3 +54,7 @@ class UpstreamQueueTimeoutError(ProxyException):
     def __init__(self, message):
         super().__init__(message, "UPSTREAM_QUEUE_TIMEOUT")
 
+class IPBlockedError(ProxyException):
+    def __init__(self, message):
+        super().__init__(message, "IP_BLOCKED")
+

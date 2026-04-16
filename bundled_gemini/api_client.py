@@ -4,9 +4,23 @@
 from gemini_webapi import GeminiClient
 from gemini_webapi.exceptions import AuthError, UsageLimitExceeded
 
+# 可选的上游异常类型（防御性导入，避免版本差异导致 ImportError）
+try:
+    from gemini_webapi.exceptions import TemporarilyBlocked as _TemporarilyBlocked
+except ImportError:
+    _TemporarilyBlocked = type(None)
+try:
+    from gemini_webapi.exceptions import ModelInvalid as _ModelInvalid
+except ImportError:
+    _ModelInvalid = type(None)
+
 from .config import ACCOUNTS, PROXIES, get_current_credentials, state
 from .logger import request_logger
-from .exceptions import ProxyException, ModelNotSupportedError, AuthInvalidError, NetworkOrProxyError, GoogleSilentAbortError, UnknownUpstreamError, UpstreamQueueTimeoutError
+from .exceptions import (
+    ProxyException, ModelNotSupportedError, AuthInvalidError,
+    NetworkOrProxyError, GoogleSilentAbortError, UnknownUpstreamError,
+    UpstreamQueueTimeoutError, IPBlockedError,
+)
 
 
 class ContextMigrationNeeded(Exception):
@@ -15,20 +29,60 @@ class ContextMigrationNeeded(Exception):
 
 
 
+# 上游 gemini_webapi 实际异常文本 → GOOGLE_SILENT_ABORT 的匹配关键词
+_SILENT_ABORT_MARKERS = (
+    "aborted by google", "silently aborted",
+    # generate_content: 非流式请求成功但 Google 未返回任何内容
+    "no output data found", "no data found in response",
+    # _generate (stream): 流中途断裂或被截断
+    "stream interrupted", "truncated",
+    # _generate (stream): 看门狗检测到活连接但无进展
+    "zombie stream", "response stalled",
+    # _generate (stream): READ_CHAT 恢复尝试全部失败
+    "read_chat returned no data",
+    # _generate (stream): Google 过载，请求入队但从未开始处理
+    "never started processing", "server is overloaded",
+)
+
+
 def _map_upstream_error(e: Exception):
+    """将上游 gemini_webapi 的原始异常映射为结构化的 ProxyException 子类。
+    
+    映射优先级：类型判定 > 关键词匹配。
+    覆盖上游库 client.py 中 _generate / generate_content 的所有 raise 路径。
+    """
     if isinstance(e, ProxyException):
         return e
     err_str = str(e).lower()
-    if isinstance(e, AuthError) or "token" in err_str or "cookie" in err_str:
+
+    # ── 1. 类型优先判定 ──
+    if isinstance(e, AuthError):
         return AuthInvalidError(str(e))
-    elif "model" in err_str and ("unknown" in err_str or "not found" in err_str or "invalid" in err_str):
+    if isinstance(e, _TemporarilyBlocked):
+        return IPBlockedError(str(e))
+    if isinstance(e, _ModelInvalid):
         return ModelNotSupportedError(str(e))
-    elif "aborted by google" in err_str or "silently aborted" in err_str:
+
+    # ── 2. 关键词匹配 ──
+    # Auth（字符串层面兜底）
+    if "token" in err_str or "cookie" in err_str:
+        return AuthInvalidError(str(e))
+    # Model
+    if "model" in err_str and any(w in err_str for w in ("unknown", "not found", "invalid", "inconsistent", "unavailable")):
+        return ModelNotSupportedError(str(e))
+    # IP 被 Google 风控拦截
+    if "temporarily blocked" in err_str or "temporarily flagged" in err_str:
+        return IPBlockedError(str(e))
+    # Google 静默丢弃 — 覆盖上游库所有 "请求被无声吞掉" 的真实错误文本
+    if any(marker in err_str for marker in _SILENT_ABORT_MARKERS):
         return GoogleSilentAbortError(str(e))
-    elif "queue_timeout" in err_str:
+    # 排队超时
+    if "queue_timeout" in err_str:
         return UpstreamQueueTimeoutError(str(e))
-    elif "connect" in err_str or "timeout" in err_str or "proxy" in err_str or "dns" in err_str:
+    # 网络 / 代理
+    if any(w in err_str for w in ("connect", "timeout", "proxy", "dns")):
         return NetworkOrProxyError(str(e))
+
     return UnknownUpstreamError(str(e))
 
 class GeminiConnection:
@@ -43,32 +97,25 @@ class GeminiConnection:
     async def initialize(self):
         """初始化网络连接和身份验证"""
         from .config import get_current_account_data
-        
+
         # 1. 提取当前核心身份标识
         acc_data = get_current_account_data()
-        psid = acc_data.get("SECURE_1PSID", getattr(acc_data, "get", lambda k,d: d)("__Secure-1PSID", ""))
-        psidts = acc_data.get("SECURE_1PSIDTS", getattr(acc_data, "get", lambda k,d: d)("__Secure-1PSIDTS", ""))
-        # 2. 构建基础客户端实例
+        psid = acc_data.get("SECURE_1PSID", acc_data.get("__Secure-1PSID", ""))
+        psidts = acc_data.get("SECURE_1PSIDTS", acc_data.get("__Secure-1PSIDTS", ""))
+
+        # 2. 构建基础客户端实例（对齐备份版：仅 PSID/PSIDTS + proxy）
         if PROXIES:
-            request_logger.log_info(f"代理就绪: proxy={PROXIES}  [当前配置模型: {state.active_model} | 当前活跃池: {state.active_account}]")
+            request_logger.log_info(f"代理就绪: proxy={PROXIES}  [模型: {state.active_model} | 账号: {state.active_account}]")
         else:
-            request_logger.log_info(f"代理就绪: proxy=disabled  [当前配置模型: {state.active_model} | 当前活跃池: {state.active_account}]")
-        
+            request_logger.log_info(f"代理就绪: proxy=disabled  [模型: {state.active_model} | 账号: {state.active_account}]")
+
         self.client = GeminiClient(psid, psidts, proxy=PROXIES)
-        
-        # 3. 注入完整 Cookie 视图
-        # 策略：除了传入核心的 1PSID，还要把其余的杂散会话 Cookie (.google.com) 一并灌入 httpx.Client。
-        # 并在最后以强校验得到的 SECURE_1PSID 盖过可能劣化的旧值，确保会话指纹高度逼真且主键不受污染。
-        if hasattr(self.client, "cookies") and isinstance(self.client.cookies, dict):
-            cookie_dict = {"__Secure-1PSID": psid, "__Secure-1PSIDTS": psidts}
-            real_cookies = acc_data.get("cookies_dict", {})
-            for k, v in real_cookies.items():
-                if k not in ("SECURE_1PSID", "SECURE_1PSIDTS", "__Secure-1PSID", "__Secure-1PSIDTS"):
-                    cookie_dict[k] = v
-            self.client.cookies.update(cookie_dict)
+
+        # 3. 不注入整包 cookies_dict（对齐备份版成功路径）
+        # 完整浏览器 Cookie 集 + 非浏览器请求行为的组合容易触发 Google WAF
+        # cookies_dict 仅用于 doctor 诊断和卫生检查，不参与实际请求构造
 
         try:
-            # 👇 修复：大幅增加整体超时与看门狗超时，防止 Gemini 思考或处理长文本时被底层库强行掐断
             await self.client.init(timeout=300, watchdog_timeout=300)
             request_logger.log_info(f"Account {state.active_account} initialized smoothly!")
             return True, "Success"
@@ -190,6 +237,18 @@ class GeminiConnection:
                 mapped_e = _map_upstream_error(e)
                 self.last_request_error = str(e)
                 self.last_request_error_type = mapped_e.error_type
+
+                # GOOGLE_SILENT_ABORT: 关闭当前连接，重新初始化后重试一次
+                # 对于 IP 被风控 (IPBlockedError) 不重试，因为根因是代理 IP 而非临时故障
+                if isinstance(mapped_e, GoogleSilentAbortError) and not getattr(self, '_silent_abort_retried', False):
+                    self._silent_abort_retried = True
+                    request_logger.log_error(
+                        f"[GOOGLE_SILENT_ABORT] 上游静默丢弃，关闭连接后重试... (原始: {str(e)[:200]})",
+                        context="generate_with_failover"
+                    )
+                    await self.close()
+                    continue
+                self._silent_abort_retried = False
                 raise mapped_e
 
 
@@ -293,6 +352,17 @@ class GeminiConnection:
                 mapped_e = _map_upstream_error(e)
                 self.last_request_error = str(e)
                 self.last_request_error_type = mapped_e.error_type
+
+                # GOOGLE_SILENT_ABORT: 关闭当前连接，重新初始化后重试一次
+                if isinstance(mapped_e, GoogleSilentAbortError) and not getattr(self, '_stream_silent_abort_retried', False):
+                    self._stream_silent_abort_retried = True
+                    request_logger.log_error(
+                        f"[GOOGLE_SILENT_ABORT] 流式生成期间上游静默丢弃，关闭连接后重试...",
+                        context="stream"
+                    )
+                    await self.close()
+                    continue
+                self._stream_silent_abort_retried = False
                 raise mapped_e
 
 

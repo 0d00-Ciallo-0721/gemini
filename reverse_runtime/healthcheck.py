@@ -93,6 +93,25 @@ def check_auth(runtime_config: dict[str, Any], auth_manager: Any = None) -> dict
         except Exception:
             pass
         result["recent_events"] = recent_events
+
+        # Cookie 卫生检查：检测 GOOGLE_ABUSE_EXEMPTION 高危标记
+        try:
+            ticket = auth_manager.store.load_active_ticket()
+            if ticket:
+                cookie_data = ticket.get("cookie_data", {})
+                ck_str = str(cookie_data.get("cookie", "") or cookie_data.get("raw_cookie", ""))
+                ck_dict = cookie_data.get("cookies_dict", {}) or {}
+                has_abuse = "GOOGLE_ABUSE_EXEMPTION" in ck_str or "GOOGLE_ABUSE_EXEMPTION" in ck_dict
+                result["cookie_hygiene"] = {
+                    "clean": not has_abuse,
+                    "warning": (
+                        "Cookie 包含 GOOGLE_ABUSE_EXEMPTION！当前代理 IP 被 Google 标记为高风险，"
+                        "生成请求可能被静默丢弃 (GOOGLE_SILENT_ABORT)。"
+                        "请更换代理节点后重新抓取纯净 Cookie。"
+                    ) if has_abuse else ""
+                }
+        except Exception:
+            pass
     else:
         active = runtime_config.get("active_ticket")
         result["details"] = {"active_ticket_exists": bool(active), "auth_status": runtime_config.get("auth_status", "unknown")}

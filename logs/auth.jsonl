@@ -103,3 +103,6 @@
 {"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T20:50:04.291738"}
 {"type": "error", "error": "刷新成功，携带热态票据重新下发请求...", "context": "auth", "time": "2026-04-15T20:50:04.291738"}
 {"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T20:50:04.296269"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T22:20:26.232505"}
+{"type": "error", "error": "刷新成功，携带热态票据重新下发请求...", "context": "auth", "time": "2026-04-15T22:20:26.233559"}
+{"type": "error", "error": "正在尝试刷新 Relay 长期饭票...", "context": "auth", "time": "2026-04-15T22:20:26.236493"}

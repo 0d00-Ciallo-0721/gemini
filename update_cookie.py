@@ -120,6 +120,27 @@ def patch_runtime_config(runtime_config_path: str | Path, cookie_list: list[Any]
     return path
 
 
+def check_cookie_hygiene(cookie_text: str) -> list[str]:
+    """检查 Cookie 是否包含 Google 风控高危标记。
+
+    GOOGLE_ABUSE_EXEMPTION 只会在 Google 判定当前 IP 为高风险后、
+    强制完成人机验证时写入。携带此标记的 Cookie 可以列模型、可以发请求，
+    但实际生成会被后端静默丢弃 (GOOGLE_SILENT_ABORT)。
+    """
+    warnings: list[str] = []
+    if not cookie_text:
+        return warnings
+    if "GOOGLE_ABUSE_EXEMPTION" in str(cookie_text):
+        warnings.append(
+            "⚠️ Cookie 中检测到 GOOGLE_ABUSE_EXEMPTION 高危标记！"
+            "说明当前代理 IP 已被 Google 标记为滥用风险。"
+            "表现为：能列模型、能发请求，但生成会被静默丢弃 (GOOGLE_SILENT_ABORT)。"
+            "修复方法：① 更换代理节点 ② 使用新节点的无痕模式重新登录 Gemini 并抓取 Cookie "
+            "③ 确认新 Cookie 中不含 GOOGLE_ABUSE_EXEMPTION 字段。"
+        )
+    return warnings
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract Gemini cookies and write runtime config accounts.")
     parser.add_argument("--runtime-config", required=True, help="Path to runtime_config.json")
