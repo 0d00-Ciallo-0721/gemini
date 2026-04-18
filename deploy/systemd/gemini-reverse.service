@@ -1,0 +1,21 @@
+[Unit]
+Description=Gemini Reverse Standalone API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gemini
+Group=gemini
+WorkingDirectory=/opt/gemini-reverse
+Environment=PROJECT_DIR=/opt/gemini-reverse
+Environment=VENV_DIR=/opt/gemini-reverse/.venv
+Environment=CONFIG_PATH=/opt/gemini-reverse/data/runtime_config.json
+ExecStart=/opt/gemini-reverse/deploy/start_server.sh
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+{
+  "host": "127.0.0.1",
+  "port": 8000,
+  "model": "gemini-3-flash",
+  "proxy": "http://127.0.0.1:7897",
+  "session_db_path": "data/reverse_sessions.sqlite3",
+  "log_dir": "data/logs",
+  "healthcheck_interval_sec": 10,
+  "allowlist_enabled": true,
+  "allowed_client_ips": [
+    "127.0.0.1/32",
+    "YOUR_BUSINESS_SERVER_IP/32"
+  ],
+  "api_keys": [
+    "REPLACE_WITH_A_LONG_RANDOM_API_KEY"
+  ],
+  "admin_token": "REPLACE_WITH_A_LONG_RANDOM_ADMIN_TOKEN",
+  "stream_first_chunk_timeout_sec": 45,
+  "stream_idle_timeout_sec": 45,
+  "auth_mode": "manual_cookie_pool",
+  "active_account": "1",
+  "accounts": {
+    "1": {
+      "label": "account_1",
+      "cookie": "PASTE_FULL_COOKIE_HERE",
+      "SECURE_1PSID": "PASTE_SECURE_1PSID_HERE",
+      "SECURE_1PSIDTS": "PASTE_SECURE_1PSIDTS_HERE"
+    }
+  }
+}
