@@ -58,3 +58,11 @@ class IPBlockedError(ProxyException):
     def __init__(self, message):
         super().__init__(message, "IP_BLOCKED")
 
+
+class SessionDbPermissionError(Exception):
+    """Raised when the session SQLite database exists but is not writable."""
+
+    def __init__(self, message: str = "session database is not writable"):
+        super().__init__(message)
+        self.error_type = "SESSION_DB_PERMISSION_ERROR"
+

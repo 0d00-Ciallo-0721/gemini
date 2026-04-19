@@ -229,3 +229,45 @@
 {"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-16T00:36:24.460579"}
 {"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-16T00:36:24.577845"}
 {"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-16T00:36:24.701294"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-17T01:27:23.197044"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-17T01:27:23.197044"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-17T01:27:23.199041"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-17T01:27:23.199041"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-17T01:27:23.309779"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-17T01:27:23.432448"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-17T01:27:48.307152"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-17T01:27:48.307152"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-17T01:27:48.309294"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-17T01:27:48.309294"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-17T01:27:48.423481"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-17T01:27:48.551822"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T21:30:41.444820"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T21:30:41.445459"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T21:30:41.446469"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T21:30:41.446469"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T21:30:41.550513"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T21:30:41.674281"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T22:06:41.763209"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T22:06:41.763209"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T22:06:41.765210"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T22:06:41.765210"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T22:06:41.880654"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T22:06:42.004094"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T23:58:50.963791"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T23:58:50.963791"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T23:58:50.965791"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T23:58:50.965791"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T23:58:51.073950"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T23:58:51.195939"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T23:59:07.632798"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T23:59:07.632798"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T23:59:07.635304"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T23:59:07.635304"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T23:59:07.745579"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T23:59:07.870202"}
+{"type": "info", "msg": "代理就绪: proxy=http://127.0.0.1:40001  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T23:59:22.681706"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T23:59:22.681706"}
+{"type": "info", "msg": "代理就绪: proxy=disabled  [模型: gemini-3.1-pro | 账号: test_acc]", "context": "", "time": "2026-04-18T23:59:22.682792"}
+{"type": "info", "msg": "Account test_acc initialized smoothly!", "context": "", "time": "2026-04-18T23:59:22.682792"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求首包超时: queue_timeout: 超过首包最长等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T23:59:22.797300"}
+{"type": "error", "error": "[gemini-3.1-pro] 上游请求流式空闲超时: queue_timeout: 首包后超过最大空闲等待时限 (0.1s)，Google 长时间排队或静默。请求被终止。", "context": "stream", "time": "2026-04-18T23:59:22.921931"}

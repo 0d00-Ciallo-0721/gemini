@@ -3,6 +3,9 @@ import json
 import os
 import sys
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 
 def _reload_module(name: str):
@@ -78,3 +81,44 @@ def test_start_server_reads_config(tmp_path):
     loaded = start_server.load_runtime_config(str(config_path))
     assert loaded["host"] == "0.0.0.0"
     assert loaded["port"] == 18000
+
+
+def test_session_manager_translates_readonly_sqlite_error(monkeypatch):
+    session_mod = _reload_module("app.session_manager")
+    manager = session_mod.SessionManager(":memory:")
+
+    class DummyConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, *_args, **_kwargs):
+            raise session_mod.sqlite3.OperationalError("attempt to write a readonly database")
+
+        def commit(self):
+            return None
+
+    with patch.object(manager, "_connect", return_value=DummyConn()):
+        with patch.object(manager, "get_session", return_value=None):
+            with pytest.raises(Exception) as caught:
+                manager.create_or_reset_session("s1", object())
+    assert caught.value.error_type == "SESSION_DB_PERMISSION_ERROR"
+    assert "readonly database" in str(caught.value)
+
+
+def test_local_error_response_uses_structured_session_db_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_REVERSE_CONFIG", str(Path("data/runtime_config.json").resolve()))
+    main_mod = _reload_module("app.main")
+    exc_mod = _reload_module("app.exceptions")
+
+    response = main_mod._local_error_response(
+        exc_mod.SessionDbPermissionError("session database is not writable: attempt to write a readonly database"),
+        status_code=503,
+    )
+
+    assert response.status_code == 503
+    body = json.loads(response.body.decode("utf-8"))
+    assert body["error_type"] == "SESSION_DB_PERMISSION_ERROR"
+    assert "readonly database" in body["error"]

@@ -20,7 +20,7 @@ from gemini_webapi.exceptions import UsageLimitExceeded
 from .api_client import ContextMigrationNeeded, gemini_conn
 from .config import ACCOUNTS, AUTH_MANAGER, PROXIES, get_current_account_data, get_runtime_config, reload_runtime_config, state
 from .context_manager import context_manager
-from .exceptions import ProxyException
+from .exceptions import ProxyException, SessionDbPermissionError
 from .logger import request_logger
 from .reverse_session import extract_reverse_session_from_messages
 from .session_manager import session_manager
@@ -60,6 +60,7 @@ async def lifespan(_: FastAPI):
     runtime_config = get_runtime_config()
     request_logger.reconfigure(str(runtime_config.get("log_dir") or "logs"))
     session_manager.set_db_path(str(runtime_config.get("session_db_path") or "reverse_sessions.sqlite3"))
+    session_manager.assert_writable()
     print("\n" + "=" * 60)
     print("Gemini Reverse Standalone 服务启动中…")
     print(f"  模型: {state.active_model}")
@@ -76,6 +77,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Gemini Reverse Standalone", lifespan=lifespan)
+
+
+def _error_type_of(exc: Exception) -> str:
+    return str(getattr(exc, "error_type", "UNKNOWN_ERROR"))
+
+
+def _local_error_response(exc: Exception, *, status_code: int = 500):
+    return JSONResponse({"error": str(exc), "error_type": _error_type_of(exc)}, status_code=status_code)
 
 
 def _get_request_client_ip(request: Request) -> str:
@@ -407,13 +416,20 @@ async def chat_completions(request: Request):
     session_id = _resolve_session_id(messages, reverse_session_info, request)
     existing_session = session_manager.get_session(session_id)
     start_index = int((existing_session or {}).get("last_msg_idx") or 0)
-    chat_session, restored = session_manager.get_or_restore_chat_session(
-        session_id,
-        gemini_conn.client,
-        model=requested_model,
-        parent_session_id=parent_session_id,
-        agent_type=agent_type,
-    )
+    try:
+        chat_session, restored = session_manager.get_or_restore_chat_session(
+            session_id,
+            gemini_conn.client,
+            model=requested_model,
+            parent_session_id=parent_session_id,
+            agent_type=agent_type,
+        )
+    except SessionDbPermissionError as exc:
+        request_logger.log_error(
+            f"[{exc.error_type}] {str(exc)}\n[db: {session_manager.db_path}]",
+            "session",
+        )
+        return _local_error_response(exc, status_code=503)
     print(f"Session {session_id}: model={requested_model} restored={restored}")
 
     has_tools = bool(tools) and tool_choice != "none"
@@ -489,7 +505,7 @@ async def chat_completions(request: Request):
                         continue
             except Exception as exc:
                 err_str = _normalize_proxy_error_text(str(exc) or repr(exc))
-                error_type = exc.error_type if isinstance(exc, ProxyException) else "UNKNOWN_ERROR"
+                error_type = _error_type_of(exc)
                 request_logger.log_error(f"[{error_type}] {err_str}\n[模型: {requested_model} | 代理: {PROXIES or 'disabled'}]", "stream")
                 yield make_sse_text_delta(f"\n[Gemini Proxy Error | {error_type}]: {err_str}", chunk_id, requested_model)
                 yield make_sse_done("stop", chunk_id, requested_model)
@@ -529,10 +545,16 @@ async def chat_completions(request: Request):
             except UsageLimitExceeded:
                 request_logger.log_error("所有账号额度耗尽", "sync")
                 return make_sync_response("所有账号额度已耗尽，请稍后再试。", model=requested_model)
+            except SessionDbPermissionError as exc:
+                request_logger.log_error(
+                    f"[{exc.error_type}] {str(exc)}\n[db: {session_manager.db_path}]",
+                    "sync",
+                )
+                return _local_error_response(exc, status_code=503)
             except Exception as exc:
-                error_type = exc.error_type if isinstance(exc, ProxyException) else "UNKNOWN_ERROR"
+                error_type = _error_type_of(exc)
                 request_logger.log_error(f"[{error_type}] {str(exc)}\n[模型: {requested_model} | 代理: {PROXIES or 'disabled'}]", "sync")
-                return JSONResponse({"error": str(exc), "error_type": error_type}, status_code=500)
+                return _local_error_response(exc, status_code=500)
     finally:
         if extracted_files:
             for file_path in extracted_files:

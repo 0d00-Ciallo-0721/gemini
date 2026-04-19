@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, Optional
 
 from .config import get_runtime_config
+from .exceptions import SessionDbPermissionError
 
 
 class SessionManager:
@@ -29,24 +30,70 @@ class SessionManager:
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
+    def _translate_sqlite_error(self, exc: sqlite3.OperationalError) -> Exception:
+        message = str(exc)
+        lowered = message.lower()
+        if "readonly" in lowered or "read-only" in lowered:
+            return SessionDbPermissionError(f"session database is not writable: {message}")
+        return exc
+
     def _ensure_db(self):
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS reverse_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    chat_metadata TEXT NOT NULL DEFAULT '',
-                    last_msg_idx INTEGER NOT NULL DEFAULT 0,
-                    parent_session_id TEXT NOT NULL DEFAULT '',
-                    model TEXT NOT NULL DEFAULT '',
-                    agent_type TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL DEFAULT 'active',
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS reverse_sessions (
+                        session_id TEXT PRIMARY KEY,
+                        chat_metadata TEXT NOT NULL DEFAULT '',
+                        last_msg_idx INTEGER NOT NULL DEFAULT 0,
+                        parent_session_id TEXT NOT NULL DEFAULT '',
+                        model TEXT NOT NULL DEFAULT '',
+                        agent_type TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'active',
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
                 )
-                """
-            )
-            conn.commit()
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise self._translate_sqlite_error(exc) from exc
+
+    def assert_writable(self):
+        probe_id = f"probe-{int(time.time() * 1000)}"
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS reverse_sessions (
+                        session_id TEXT PRIMARY KEY,
+                        chat_metadata TEXT NOT NULL DEFAULT '',
+                        last_msg_idx INTEGER NOT NULL DEFAULT 0,
+                        parent_session_id TEXT NOT NULL DEFAULT '',
+                        model TEXT NOT NULL DEFAULT '',
+                        agent_type TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'active',
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO reverse_sessions (
+                        session_id, chat_metadata, last_msg_idx, parent_session_id,
+                        model, agent_type, status, created_at, updated_at
+                    ) VALUES (?, '', 0, '', '', '', 'probe', ?, ?)
+                    ON CONFLICT(session_id) DO UPDATE SET
+                        status=excluded.status,
+                        updated_at=excluded.updated_at
+                    """,
+                    (probe_id, time.time(), time.time()),
+                )
+                conn.execute("DELETE FROM reverse_sessions WHERE session_id = ?", (probe_id,))
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise self._translate_sqlite_error(exc) from exc
 
     def _deserialize_metadata(self, raw: str) -> list[Any] | None:
         raw_text = str(raw or "").strip()
@@ -97,35 +144,38 @@ class SessionManager:
     def _upsert_record(self, record: Dict[str, Any]):
         now = time.time()
         created_at = float(record.get("created_at") or now)
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO reverse_sessions (
-                    session_id, chat_metadata, last_msg_idx, parent_session_id,
-                    model, agent_type, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
-                    chat_metadata=excluded.chat_metadata,
-                    last_msg_idx=excluded.last_msg_idx,
-                    parent_session_id=excluded.parent_session_id,
-                    model=excluded.model,
-                    agent_type=excluded.agent_type,
-                    status=excluded.status,
-                    updated_at=excluded.updated_at
-                """,
-                (
-                    record["session_id"],
-                    self._serialize_metadata(record.get("chat_metadata")),
-                    int(record.get("last_msg_idx") or 0),
-                    record.get("parent_session_id", "") or "",
-                    record.get("model", "") or "",
-                    record.get("agent_type", "") or "",
-                    record.get("status", "active") or "active",
-                    created_at,
-                    now,
-                ),
-            )
-            conn.commit()
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO reverse_sessions (
+                        session_id, chat_metadata, last_msg_idx, parent_session_id,
+                        model, agent_type, status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(session_id) DO UPDATE SET
+                        chat_metadata=excluded.chat_metadata,
+                        last_msg_idx=excluded.last_msg_idx,
+                        parent_session_id=excluded.parent_session_id,
+                        model=excluded.model,
+                        agent_type=excluded.agent_type,
+                        status=excluded.status,
+                        updated_at=excluded.updated_at
+                    """,
+                    (
+                        record["session_id"],
+                        self._serialize_metadata(record.get("chat_metadata")),
+                        int(record.get("last_msg_idx") or 0),
+                        record.get("parent_session_id", "") or "",
+                        record.get("model", "") or "",
+                        record.get("agent_type", "") or "",
+                        record.get("status", "active") or "active",
+                        created_at,
+                        now,
+                    ),
+                )
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise self._translate_sqlite_error(exc) from exc
         record["created_at"] = created_at
         record["updated_at"] = now
 
