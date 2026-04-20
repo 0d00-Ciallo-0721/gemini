@@ -21,7 +21,20 @@ async def list_models_response(request: Request | None = None):
         models = [active_model]
     if active_model not in models:
         models.append(active_model)
-    return JSONResponse({"object": "list", "data": [{"id": model_id, "object": "model", "created": int(time.time()), "owned_by": "google/gemini_webapi"} for model_id in models]})
+    return JSONResponse(
+        {
+            "object": "list",
+            "data": [
+                {
+                    "id": model_id,
+                    "object": "model",
+                    "created": int(time.time()),
+                    "owned_by": "gemini-reverse",
+                }
+                for model_id in models
+            ],
+        }
+    )
 
 
 @router.get("/v1/models")

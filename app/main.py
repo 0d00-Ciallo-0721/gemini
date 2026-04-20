@@ -40,7 +40,7 @@ builtins.print = _safe_print
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     services = attach_runtime_services(app)
     runtime_config = services.runtime_config
     services.request_logger.reconfigure(str(runtime_config.get("log_dir") or "logs"))
@@ -60,19 +60,18 @@ async def lifespan(_: FastAPI):
         services.request_logger.close()
         await services.gemini_conn.close()
 
-
-app = FastAPI(title="Gemini Reverse Standalone", lifespan=lifespan)
-
-
 def _module_runtime_config():
     return build_runtime_services().runtime_config
+
+
+def _debug_loopback_bypass_enabled(runtime_config: dict) -> bool:
+    return bool(runtime_config.get("debug_loopback_bypass_enabled", True))
 
 
 def _local_error_response(exc: Exception, *, status_code: int = 500):
     return make_exception_error_response(exc, status_code=status_code)
 
 
-@app.middleware("http")
 async def allowlist_middleware(request: Request, call_next):
     path = request.url.path
     runtime_config = get_runtime_services(request).runtime_config
@@ -80,7 +79,11 @@ async def allowlist_middleware(request: Request, call_next):
     is_loopback = client_ip in {"127.0.0.1", "::1", "localhost"}
     if path in {"/healthz", "/readyz"}:
         return await call_next(request)
-    if path.startswith("/v1/debug/") and not is_loopback and not require_admin_token(request, runtime_config):
+    if (
+        path.startswith("/v1/debug/")
+        and not (_debug_loopback_bypass_enabled(runtime_config) and is_loopback)
+        and not require_admin_token(request, runtime_config)
+    ):
         return make_openai_error_response(
             "admin token required",
             error_type="authentication_error",
@@ -106,12 +109,10 @@ async def allowlist_middleware(request: Request, call_next):
     )
 
 
-@app.get("/healthz")
 async def healthz():
     return JSONResponse({"status": "ok"})
 
 
-@app.get("/readyz")
 async def readyz():
     services = get_runtime_services()
     return JSONResponse({
@@ -122,10 +123,19 @@ async def readyz():
     })
 
 
-app.include_router(models_router)
-app.include_router(chat_router)
-if _module_runtime_config().get("debug_routes_enabled", True):
-    app.include_router(debug_router)
+def create_app() -> FastAPI:
+    app = FastAPI(title="Gemini Reverse Standalone", lifespan=lifespan)
+    app.middleware("http")(allowlist_middleware)
+    app.get("/healthz")(healthz)
+    app.get("/readyz")(readyz)
+    app.include_router(models_router)
+    app.include_router(chat_router)
+    if _module_runtime_config().get("debug_routes_enabled", True):
+        app.include_router(debug_router)
+    return app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":

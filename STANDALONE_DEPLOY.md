@@ -1,37 +1,50 @@
-# Gemini Reverse Standalone
+# Gemini Reverse Standalone 部署说明
 
 ## 启动前准备
 
-1. 复制 `config.example.json` 为 `data/runtime_config.json`
-2. 至少填写这些字段：
-   - `proxy`
-   - `accounts`
-   - `admin_token`
-   - `allowed_client_ips`
-   - `api_keys`
-3. 如果服务放在反向代理后面，把反代出口加到 `trusted_proxies`
+1. 复制模板：
 
-## 关键配置说明
+```bash
+cp config.example.json data/runtime_config.json
+```
+
+2. 至少填写以下字段：
+
+- `proxy`
+- `accounts`
+- `allowed_client_ips`
+- `api_keys`
+- `admin_token`
+
+3. 如果服务部署在反向代理后面，把反代出口加入 `trusted_proxies`
+
+## 关键配置
 
 ### 访问控制
 
 - `allowed_client_ips`
-  - 白名单来源直接放行
+  - 命中白名单的来源可直接访问业务接口
 - `api_keys`
-  - 不在白名单内的客户端，可以通过 `Authorization: Bearer ...` 或 `x-api-key` 访问主业务接口
+  - 不在白名单内的来源必须提供有效 key
 - `admin_token`
-  - `/v1/debug/*` 默认需要 `x-admin-token` 或 `Authorization: Bearer ...`
+  - debug 路由使用的管理令牌
 - `trusted_proxies`
-  - 只有请求源命中这里时，服务才会信任 `X-Forwarded-For`
+  - 仅在请求源命中这里时，服务才信任 `X-Forwarded-For`
 
-### 流式超时
+### Debug 相关配置
 
-- `stream_first_chunk_timeout_sec`
-  - 首包等待超时
-- `stream_idle_timeout_sec`
-  - 首包之后的流式空闲超时
+- `debug_routes_enabled`
+  - 为 `false` 时，不注册任何公开 debug 路由
+- `debug_loopback_bypass_enabled`
+  - 为 `true` 时，来自 `127.0.0.1` / `::1` / `localhost` 的 debug 请求可免 admin token
+  - 为 `false` 时，所有 debug 请求都必须带有效 admin token
 
-### 静态账号池
+注意：
+
+- loopback bypass 只作用于 debug 路由的 admin token 校验
+- 它不绕过 allowlist / API key 主链路
+
+### 账号池
 
 `accounts` 使用静态多账号池格式：
 
@@ -46,7 +59,7 @@
 }
 ```
 
-推荐用下面命令更新账号池：
+推荐使用：
 
 ```bash
 python scripts/update_cookie.py
@@ -58,22 +71,38 @@ python scripts/update_cookie.py
 python scripts/start_server.py --config ./data/runtime_config.json
 ```
 
-## 主要接口
+## 正式公开接口
 
+- `GET /healthz`
+- `GET /readyz`
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /v1/completions`
 - `POST /v1/embeddings`
-- `GET /healthz`
-- `GET /readyz`
 - `GET /v1/debug/status`
 - `GET /v1/debug/network`
 - `GET /v1/debug/doctor`
+- `POST /v1/debug/auth/push_ticket`
+- `GET /v1/debug/auth/status`
+
+### `/v1/models` 契约
+
+返回模型列表时，每个 model item 固定包含：
+
+```json
+{
+  "id": "gemini-3-flash",
+  "object": "model",
+  "created": 1776271617,
+  "owned_by": "gemini-reverse"
+}
+```
 
 ## 最小验收
 
 ```bash
 curl http://127.0.0.1:8000/healthz
+curl http://127.0.0.1:8000/readyz
 curl http://127.0.0.1:8000/v1/models
 ```
 
@@ -99,18 +128,4 @@ Debug：
 curl http://127.0.0.1:8000/v1/debug/status -H "x-admin-token: YOUR_ADMIN_TOKEN"
 ```
 
-## 反向代理示例
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.example;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+如果 `debug_loopback_bypass_enabled=true`，则本机 loopback 调试请求可不带 `x-admin-token`。

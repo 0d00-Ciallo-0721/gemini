@@ -1,6 +1,6 @@
 # Gemini Reverse VPS 部署指南
 
-本文档面向独立部署场景：把 `gemini-reverse` 作为一个 OpenAI 兼容服务运行在美国 VPS 上，由外部服务器或本地电脑访问。
+本文档面向 standalone 场景：将 `gemini-reverse` 作为一个独立的 OpenAI 兼容服务部署到 VPS，对外提供统一 HTTP 接口。
 
 ## 1. 推荐目录
 
@@ -48,6 +48,8 @@ cp config.example.json data/runtime_config.json
   "port": 8000,
   "model": "gemini-3-flash",
   "proxy": "socks5://127.0.0.1:40000",
+  "debug_routes_enabled": true,
+  "debug_loopback_bypass_enabled": true,
   "allowlist_enabled": true,
   "allowed_client_ips": [
     "127.0.0.1/32",
@@ -76,14 +78,20 @@ cp config.example.json data/runtime_config.json
 ### 访问控制建议
 
 - 业务服务器公网 IP：加入 `allowed_client_ips`
-- 本地电脑或临时客户端：不加白名单，改用 `api_keys`
-- `/v1/debug/*`：统一使用 `admin_token`
+- 本地电脑或临时客户端：通过 `api_keys` 访问
+- debug 路由：使用 `admin_token`
 
-### 代理建议
+### Debug 鉴权说明
 
-- 如果机房 IP 可直连 Gemini，可留空 `proxy`
-- 如果需要走 WARP SOCKS5，填 `socks5://127.0.0.1:40000`
-- 如果服务部署在 Nginx 或其他反代后面，把反代出口填入 `trusted_proxies`
+- `debug_routes_enabled=false`
+  - 不注册公开 debug 路由
+- `debug_routes_enabled=true`
+  - `debug_loopback_bypass_enabled=true`
+    - loopback 来源的 debug 请求可免 admin token
+  - `debug_loopback_bypass_enabled=false`
+    - 所有 debug 请求都必须带有效 admin token
+
+注意：loopback bypass 只影响 debug 的 admin token，不影响 allowlist / API key 主链路。
 
 ## 5. 更新 Cookie
 
@@ -111,11 +119,20 @@ python scripts/start_server.py --config ./data/runtime_config.json
 
 ```bash
 curl http://127.0.0.1:8000/healthz
+curl http://127.0.0.1:8000/readyz
 curl http://127.0.0.1:8000/v1/models
 curl http://127.0.0.1:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemini-3-flash","messages":[{"role":"user","content":"你好"}]}'
 curl http://127.0.0.1:8000/v1/debug/status -H "x-admin-token: YOUR_ADMIN_TOKEN"
+```
+
+### `/v1/models` 契约
+
+`/v1/models` 中每个 model item 的 `owned_by` 固定为：
+
+```json
+"owned_by": "gemini-reverse"
 ```
 
 ## 7. 配置 systemd
@@ -124,7 +141,7 @@ curl http://127.0.0.1:8000/v1/debug/status -H "x-admin-token: YOUR_ADMIN_TOKEN"
 sudo cp deploy/systemd/gemini-reverse.service /etc/systemd/system/gemini-reverse.service
 ```
 
-如果目录、用户或配置路径不同，先修改 service 文件中的：
+如目录、用户或配置路径不同，先修改 service 文件中的：
 
 - `User`
 - `Group`
@@ -164,41 +181,30 @@ sudo systemctl reload nginx
 - 反代目标是 `127.0.0.1:8000`
 - `X-Forwarded-For` 已透传
 
-## 9. 外部访问方式
+## 9. 正式公开 debug 接口
 
-外部服务不要直接访问 Gemini，只访问你的 VPS：
+仅以下 5 个 debug 路由作为正式公开能力维护：
 
-```bash
-https://your-domain.example/v1/chat/completions
-```
+- `GET /v1/debug/status`
+- `GET /v1/debug/network`
+- `GET /v1/debug/doctor`
+- `POST /v1/debug/auth/push_ticket`
+- `GET /v1/debug/auth/status`
 
-白名单内来源可以直接调用；非白名单来源需要带 key：
-
-```http
-Authorization: Bearer YOUR_API_KEY
-```
-
-或：
-
-```http
-x-api-key: YOUR_API_KEY
-```
-
-Debug 接口额外带：
-
-```http
-x-admin-token: YOUR_ADMIN_TOKEN
-```
+`/v1/debug/last` 与 `/v1/debug/logs` 不作为正式公开接口维护。
 
 ## 10. 常见问题
 
 ### `403 client ip is not allowlisted`
 
-说明请求来源既不在 `allowed_client_ips`，也没有提供有效 `api_keys`。
+说明请求来源不在 `allowed_client_ips`，且未提供有效 `api_keys`。
 
 ### `/v1/debug/status` 返回 `401`
 
-说明缺少或提供了错误的 `admin_token`。
+说明当前请求不满足 debug 鉴权规则：
+
+- 非 loopback，且缺少有效 `admin_token`
+- 或 `debug_loopback_bypass_enabled=false`，但未提供 `admin_token`
 
 ### `ConnectError` / `ReadTimeout`
 
@@ -207,4 +213,4 @@ x-admin-token: YOUR_ADMIN_TOKEN
 1. VPS 上的代理是否真的可用
 2. `proxy` 配置是否正确
 3. `SECURE_1PSID` / `SECURE_1PSIDTS` 是否有效
-4. 当前模型是否先从 `gemini-3-flash` 开始验证
+4. 是否先从 `gemini-3-flash` 开始验证

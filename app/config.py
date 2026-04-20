@@ -22,6 +22,7 @@ DEFAULT_RUNTIME_CONFIG = {
     "log_dir": "",
     "debug_mode": False,
     "debug_routes_enabled": True,
+    "debug_loopback_bypass_enabled": True,
     "debug_payload_logging": False,
     "accounts": {},
     "proxy": "",

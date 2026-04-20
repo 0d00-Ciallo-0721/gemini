@@ -84,11 +84,15 @@ class SessionManager:
                         model TEXT NOT NULL DEFAULT '',
                         agent_type TEXT NOT NULL DEFAULT '',
                         status TEXT NOT NULL DEFAULT 'active',
+                        last_restore_reason TEXT NOT NULL DEFAULT '',
+                        last_restore_at REAL,
+                        last_error_type TEXT NOT NULL DEFAULT '',
                         created_at REAL NOT NULL,
                         updated_at REAL NOT NULL
                     )
                     """
                 )
+                self._ensure_columns(conn)
                 conn.commit()
         except sqlite3.OperationalError as exc:
             raise self._translate_sqlite_error(exc) from exc
@@ -107,11 +111,15 @@ class SessionManager:
                         model TEXT NOT NULL DEFAULT '',
                         agent_type TEXT NOT NULL DEFAULT '',
                         status TEXT NOT NULL DEFAULT 'active',
+                        last_restore_reason TEXT NOT NULL DEFAULT '',
+                        last_restore_at REAL,
+                        last_error_type TEXT NOT NULL DEFAULT '',
                         created_at REAL NOT NULL,
                         updated_at REAL NOT NULL
                     )
                     """
                 )
+                self._ensure_columns(conn)
                 conn.execute(
                     """
                     INSERT INTO reverse_sessions (
@@ -128,6 +136,22 @@ class SessionManager:
                 conn.commit()
         except sqlite3.OperationalError as exc:
             raise self._translate_sqlite_error(exc) from exc
+
+    def _ensure_columns(self, conn: sqlite3.Connection):
+        existing = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(reverse_sessions);").fetchall()
+        }
+        column_specs = {
+            "last_restore_reason": "TEXT NOT NULL DEFAULT ''",
+            "last_restore_at": "REAL",
+            "last_error_type": "TEXT NOT NULL DEFAULT ''",
+        }
+        for column_name, column_type in column_specs.items():
+            if column_name not in existing:
+                conn.execute(
+                    f"ALTER TABLE reverse_sessions ADD COLUMN {column_name} {column_type}"
+                )
 
     def _deserialize_metadata(self, raw: str) -> list[Any] | None:
         raw_text = str(raw or "").strip()
@@ -159,8 +183,11 @@ class SessionManager:
                 "model": row[4],
                 "agent_type": row[5],
                 "status": row[6],
-                "created_at": row[7],
-                "updated_at": row[8],
+                "last_restore_reason": row[7] if len(row) > 7 else "",
+                "last_restore_at": row[8] if len(row) > 8 else None,
+                "last_error_type": row[9] if len(row) > 9 else "",
+                "created_at": row[10] if len(row) > 10 else row[7],
+                "updated_at": row[11] if len(row) > 11 else row[8],
             }
         return {
             "session_id": row["session_id"],
@@ -171,6 +198,9 @@ class SessionManager:
             "model": row["model"] or "",
             "agent_type": row["agent_type"] or "",
             "status": row["status"] or "active",
+            "last_restore_reason": row["last_restore_reason"] or "",
+            "last_restore_at": row["last_restore_at"],
+            "last_error_type": row["last_error_type"] or "",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -184,8 +214,9 @@ class SessionManager:
                     """
                     INSERT INTO reverse_sessions (
                         session_id, chat_metadata, last_msg_idx, parent_session_id,
-                        model, agent_type, status, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        model, agent_type, status, last_restore_reason, last_restore_at,
+                        last_error_type, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(session_id) DO UPDATE SET
                         chat_metadata=excluded.chat_metadata,
                         last_msg_idx=excluded.last_msg_idx,
@@ -193,6 +224,9 @@ class SessionManager:
                         model=excluded.model,
                         agent_type=excluded.agent_type,
                         status=excluded.status,
+                        last_restore_reason=excluded.last_restore_reason,
+                        last_restore_at=excluded.last_restore_at,
+                        last_error_type=excluded.last_error_type,
                         updated_at=excluded.updated_at
                     """,
                     (
@@ -203,6 +237,9 @@ class SessionManager:
                         record.get("model", "") or "",
                         record.get("agent_type", "") or "",
                         record.get("status", "active") or "active",
+                        record.get("last_restore_reason", "") or "",
+                        record.get("last_restore_at"),
+                        record.get("last_error_type", "") or "",
                         created_at,
                         now,
                     ),
@@ -219,7 +256,8 @@ class SessionManager:
             row = conn.execute(
                 """
                 SELECT session_id, chat_metadata, last_msg_idx, parent_session_id,
-                       model, agent_type, status, created_at, updated_at
+                       model, agent_type, status, last_restore_reason, last_restore_at,
+                       last_error_type, created_at, updated_at
                 FROM reverse_sessions
                 WHERE session_id = ?
                 """,
@@ -248,6 +286,9 @@ class SessionManager:
         model: str = "",
         agent_type: str = "",
         status: str = "active",
+        last_restore_reason: str = "",
+        last_restore_at: Optional[float] = None,
+        last_error_type: str = "",
     ) -> Dict[str, Any]:
         record = self.get_session(session_id) or {
             "session_id": session_id,
@@ -262,6 +303,9 @@ class SessionManager:
                 "model": model or record.get("model", "") or "",
                 "agent_type": agent_type or record.get("agent_type", "") or "",
                 "status": status or "active",
+                "last_restore_reason": last_restore_reason or record.get("last_restore_reason", "") or "",
+                "last_restore_at": last_restore_at if last_restore_at is not None else record.get("last_restore_at"),
+                "last_error_type": last_error_type or record.get("last_error_type", "") or "",
             }
         )
         self._active_sessions[session_id] = record
@@ -269,6 +313,10 @@ class SessionManager:
         return record
 
     def remove_session(self, session_id: str) -> bool:
+        record = self.get_session(session_id)
+        if record:
+            record["status"] = "closed"
+            self._upsert_record(record)
         if session_id in self._active_sessions:
             del self._active_sessions[session_id]
         if not session_id:
@@ -305,6 +353,9 @@ class SessionManager:
         parent_session_id: str = "",
         agent_type: str = "",
         status: str = "active",
+        last_restore_reason: str = "",
+        last_restore_at: Optional[float] = None,
+        last_error_type: str = "",
     ) -> Dict[str, Any]:
         record = self.get_session(session_id) or {
             "session_id": session_id,
@@ -318,6 +369,9 @@ class SessionManager:
         record["parent_session_id"] = parent_session_id or record.get("parent_session_id", "") or ""
         record["agent_type"] = agent_type or record.get("agent_type", "") or ""
         record["status"] = status or record.get("status", "active") or "active"
+        record["last_restore_reason"] = last_restore_reason or record.get("last_restore_reason", "") or ""
+        record["last_restore_at"] = last_restore_at if last_restore_at is not None else record.get("last_restore_at")
+        record["last_error_type"] = last_error_type or record.get("last_error_type", "") or ""
         self._active_sessions[session_id] = record
         self._upsert_record(record)
         return record
@@ -341,14 +395,23 @@ class SessionManager:
         restored = False
         chat_session = None
         metadata = (record or {}).get("chat_metadata")
+        restore_reason = ""
+        last_error_type = ""
         if metadata:
             try:
                 chat_session = client.start_chat(metadata=metadata, model=model)
                 restored = True
-            except Exception:
+                restore_reason = "metadata_restored"
+            except Exception as exc:
                 chat_session = None
+                restore_reason = "restore_failed_fallback"
+                last_error_type = type(exc).__name__
 
         if chat_session is None:
+            if metadata and not restore_reason:
+                restore_reason = "restore_failed_fallback"
+            elif not metadata:
+                restore_reason = "missing_metadata_recreated"
             chat_session = client.start_chat(model=model)
 
         last_msg_idx = int((record or {}).get("last_msg_idx") or 0)
@@ -359,7 +422,10 @@ class SessionManager:
             parent_session_id=parent_session_id or (record or {}).get("parent_session_id", ""),
             model=model or (record or {}).get("model", ""),
             agent_type=agent_type or (record or {}).get("agent_type", ""),
-            status="active",
+            status="restored" if restored else "recreated",
+            last_restore_reason=restore_reason,
+            last_restore_at=time.time(),
+            last_error_type=last_error_type,
         )
         return chat_session, restored
 

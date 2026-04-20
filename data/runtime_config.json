@@ -6,6 +6,7 @@
   "session_db_path": "data/reverse_sessions.sqlite3",
   "log_dir": "data/logs",
   "debug_routes_enabled": true,
+  "debug_loopback_bypass_enabled": true,
   "debug_payload_logging": false,
   "healthcheck_interval_sec": 10,
   "allowlist_enabled": true,

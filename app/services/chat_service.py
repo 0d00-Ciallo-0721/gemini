@@ -22,6 +22,7 @@ from ..openai_adapter import (
     make_exception_error_response,
     make_openai_error_chunk,
     make_openai_error_response,
+    make_usage_limit_exceeded_response,
 )
 from ..reverse_session import extract_reverse_session_from_messages
 from ..tool_adapter import build_tool_aware_prompt
@@ -472,7 +473,7 @@ async def chat_completions(request: Request):
                 continue
             except UsageLimitExceeded:
                 active_request_logger.log_error("所有账号额度耗尽", "sync")
-                return make_sync_response("所有账号额度已耗尽，请稍后再试。", model=requested_model)
+                return make_usage_limit_exceeded_response()
             except SessionDbPermissionError as exc:
                 active_request_logger.log_error(
                     f"[{exc.error_type}] {str(exc)}\n[db: {active_session_manager.db_path}]",
@@ -539,6 +540,8 @@ async def completions(request: Request):
             f"[{_error_type_of(exc)}] {str(exc)}\n[模型: {requested_model}]",
             "sync",
         )
+        if isinstance(exc, UsageLimitExceeded):
+            return make_usage_limit_exceeded_response()
         return make_exception_error_response(exc, status_code=500)
 
 

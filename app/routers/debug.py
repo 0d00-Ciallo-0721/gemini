@@ -9,9 +9,10 @@ from runtime.healthcheck import run_doctor
 from runtime.ticket_receiver import handle_push_ticket
 
 router = APIRouter()
+internal_router = APIRouter()
 
 
-@router.get("/v1/debug/last")
+@internal_router.get("/v1/debug/last")
 async def debug_last(request: Request):
     last = get_runtime_services(request).request_logger.get_last_request()
     if not last:
@@ -19,7 +20,7 @@ async def debug_last(request: Request):
     return JSONResponse(last)
 
 
-@router.get("/v1/debug/logs")
+@internal_router.get("/v1/debug/logs")
 async def debug_logs(request: Request):
     logs = get_runtime_services(request).request_logger.get_recent_logs(30)
     return JSONResponse({"count": len(logs), "logs": logs})
