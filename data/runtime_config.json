@@ -5,11 +5,17 @@
   "proxy": "http://127.0.0.1:7897",
   "session_db_path": "data/reverse_sessions.sqlite3",
   "log_dir": "data/logs",
+  "debug_routes_enabled": true,
+  "debug_payload_logging": false,
   "healthcheck_interval_sec": 10,
   "allowlist_enabled": true,
   "allowed_client_ips": [
     "127.0.0.1/32",
     "YOUR_BUSINESS_SERVER_IP/32"
+  ],
+  "trusted_proxies": [
+    "127.0.0.1/32",
+    "::1/128"
   ],
   "api_keys": [
     "REPLACE_WITH_A_LONG_RANDOM_API_KEY"

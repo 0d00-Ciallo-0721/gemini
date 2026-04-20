@@ -27,10 +27,12 @@ async def test_api_client_initialize_full_cookies():
             
             assert msg == "Success"
             assert success is True
-            # Full cookie view should be imported properly
-            assert mock_client_instance.cookies["__Secure-1PSID"] == "mock_psid"
-            assert mock_client_instance.cookies["OTHER_COOKIE"] == "extra_value"
-            assert "raw_cookie" not in mock_client_instance.cookies
+            # Standalone/bundled current strategy only initializes with PSID/PSIDTS + proxy.
+            # Full cookies stay in config for doctor/hygiene diagnostics and are not injected.
+            args, kwargs = MockClientType.call_args
+            assert args[:2] == ("mock_psid", "mock_psidts")
+            assert "proxy" in kwargs
+            assert mock_client_instance.cookies == {}
             
 @pytest.mark.asyncio
 async def test_api_client_refresh_fallback():

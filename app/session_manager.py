@@ -1,11 +1,26 @@
 import json
 import os
 import sqlite3
+import threading
 import time
+from collections import defaultdict
+from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
-from .config import get_runtime_config
+from . import config as config_mod
 from .exceptions import SessionDbPermissionError
+
+
+_runtime_config_provider = config_mod.get_runtime_config
+
+
+def set_runtime_config_provider(provider):
+    global _runtime_config_provider
+    _runtime_config_provider = provider or config_mod.get_runtime_config
+
+
+def get_runtime_config_snapshot():
+    return _runtime_config_provider()
 
 
 class SessionManager:
@@ -14,10 +29,12 @@ class SessionManager:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or self._default_db_path()
         self._active_sessions: Dict[str, Dict[str, Any]] = {}
+        self._session_locks: dict[str, threading.RLock] = defaultdict(threading.RLock)
+        self._session_locks_guard = threading.Lock()
         self._ensure_db()
 
     def _default_db_path(self) -> str:
-        runtime_config = get_runtime_config()
+        runtime_config = get_runtime_config_snapshot()
         db_path = str(runtime_config.get("session_db_path") or "reverse_sessions.sqlite3")
         os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
         return db_path
@@ -28,7 +45,24 @@ class SessionManager:
         self._ensure_db()
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=5, isolation_level=None, check_same_thread=False)
+        self._configure_connection(conn)
+        return conn
+
+    def _configure_connection(self, conn: sqlite3.Connection):
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+
+    @contextmanager
+    def session_lock(self, session_id: str):
+        if not session_id:
+            yield
+            return
+        with self._session_locks_guard:
+            lock = self._session_locks[session_id]
+        with lock:
+            yield
 
     def _translate_sqlite_error(self, exc: sqlite3.OperationalError) -> Exception:
         message = str(exc)

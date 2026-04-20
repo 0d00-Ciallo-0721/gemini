@@ -14,14 +14,13 @@ try:
 except ImportError:
     _ModelInvalid = type(None)
 
-from .config import ACCOUNTS, PROXIES, get_current_credentials, state
-from .logger import request_logger
+from . import config as config_mod
+from . import logger as logger_mod
 from .exceptions import (
     ProxyException, ModelNotSupportedError, AuthInvalidError,
     NetworkOrProxyError, GoogleSilentAbortError, UnknownUpstreamError,
     UpstreamQueueTimeoutError, IPBlockedError,
 )
-
 
 class ContextMigrationNeeded(Exception):
     """当账号发生轮换，当前物理 ChatSession 失效时抛出的特定信号，通知上层进行全量上下文重建"""
@@ -94,22 +93,54 @@ class GeminiConnection:
         self.last_request_error_type = None
         self.last_refresh_result = None
 
+    @property
+    def request_logger(self):
+        return logger_mod.request_logger
+
+    @property
+    def state(self):
+        return config_mod.state
+
+    @property
+    def accounts(self):
+        return config_mod.ACCOUNTS
+
+    @property
+    def proxy(self):
+        return config_mod.PROXIES
+
+    @property
+    def auth_manager(self):
+        return getattr(config_mod, "AUTH_MANAGER", None)
+
+    @property
+    def runtime_config(self):
+        return config_mod.RUNTIME_CONFIG
+
+    def get_current_account_data(self):
+        return config_mod.get_current_account_data()
+
+    def reload_runtime_config(self):
+        return config_mod.reload_runtime_config()
+
     async def initialize(self):
         """初始化网络连接和身份验证"""
-        from .config import get_current_account_data
 
         # 1. 提取当前核心身份标识
-        acc_data = get_current_account_data()
+        request_logger = self.request_logger
+        state = self.state
+        proxy = self.proxy
+        acc_data = self.get_current_account_data()
         psid = acc_data.get("SECURE_1PSID", acc_data.get("__Secure-1PSID", ""))
         psidts = acc_data.get("SECURE_1PSIDTS", acc_data.get("__Secure-1PSIDTS", ""))
 
         # 2. 构建基础客户端实例（对齐备份版：仅 PSID/PSIDTS + proxy）
-        if PROXIES:
-            request_logger.log_info(f"代理就绪: proxy={PROXIES}  [模型: {state.active_model} | 账号: {state.active_account}]")
+        if proxy:
+            request_logger.log_info(f"代理就绪: proxy={proxy}  [模型: {state.active_model} | 账号: {state.active_account}]")
         else:
             request_logger.log_info(f"代理就绪: proxy=disabled  [模型: {state.active_model} | 账号: {state.active_account}]")
 
-        self.client = GeminiClient(psid, psidts, proxy=PROXIES)
+        self.client = GeminiClient(psid, psidts, proxy=proxy)
 
         # 3. 不注入整包 cookies_dict（对齐备份版成功路径）
         # 完整浏览器 Cookie 集 + 非浏览器请求行为的组合容易触发 Google WAF
@@ -138,8 +169,11 @@ class GeminiConnection:
 
     async def _switch_account(self, reason: str) -> bool:
         """切换到下一个可用账号"""
+        request_logger = self.request_logger
+        state = self.state
+        accounts = self.accounts
         current = state.active_account
-        account_ids = sorted(ACCOUNTS.keys())
+        account_ids = sorted(accounts.keys())
         current_idx = account_ids.index(current) if current in account_ids else 0
 
         for offset in range(1, len(account_ids)):
@@ -166,8 +200,10 @@ class GeminiConnection:
         带账号自动轮换的请求方法。
         额度耗尽时自动切换到下一个账号重试。
         """
-        from .config import AUTH_MANAGER
-        
+        request_logger = self.request_logger
+        state = self.state
+        accounts = self.accounts
+        auth_manager = self.auth_manager
         tried_accounts = set()
 
         while True:
@@ -194,7 +230,7 @@ class GeminiConnection:
                     context="generate_with_failover"
                 )
 
-                if len(tried_accounts) >= len(ACCOUNTS):
+                if len(tried_accounts) >= len(accounts):
                     raise UsageLimitExceeded("所有账号额度已耗尽！请更新账号或等待重置。")
 
                 switched = await self._switch_account("额度耗尽自动轮换")
@@ -207,24 +243,23 @@ class GeminiConnection:
                 # -----------------------------------------------------------
                 # Refresh-First 控制流：遇到权限异常，先尝试抢救（长期饭票特权）
                 # -----------------------------------------------------------
-                if state.active_account == "relay_active" and getattr(self, "_refresh_tried", False) is False and AUTH_MANAGER:
+                if state.active_account == "relay_active" and getattr(self, "_refresh_tried", False) is False and auth_manager:
                     from runtime.ticket_refresher import refresh_active_ticket
                     self._refresh_tried = True
                     request_logger.log_error("正在尝试刷新 Relay 长期饭票...", context="auth")
                     
-                    refreshed = await refresh_active_ticket(AUTH_MANAGER, self.client)
+                    refreshed = await refresh_active_ticket(auth_manager, self.client)
                     self.last_refresh_result = refreshed
                     if refreshed:
-                        AUTH_MANAGER.set_fallback_state(False)
-                        from .config import reload_runtime_config
-                        reload_runtime_config() # 刷新本地配置以同步最新的 active_account
+                        auth_manager.set_fallback_state(False)
+                        self.reload_runtime_config() # 刷新本地配置以同步最新的 active_account
                         request_logger.log_error("刷新成功，携带热态票据重新下发请求...", context="auth")
                         continue # retry current request
                     
                 # -----------------------------------------------------------
                 # Fallback 控制流：抢救失败，进入死亡降级，尝试轮换账号
                 # -----------------------------------------------------------
-                if len(tried_accounts) >= len(ACCOUNTS):
+                if len(tried_accounts) >= len(accounts):
                     raise AuthError("全部可用认证均已失效！请手工或通过 Helper 补充 Cookie。")
 
                 if getattr(self, "_refresh_tried", False):
@@ -256,7 +291,10 @@ class GeminiConnection:
         """
         专为流式设计的带账号轮换生成方法，支持物理会话维持。
         """
-        from .config import AUTH_MANAGER
+        request_logger = self.request_logger
+        state = self.state
+        accounts = self.accounts
+        auth_manager = self.auth_manager
         tried_accounts = set()
 
         while True:
@@ -268,7 +306,7 @@ class GeminiConnection:
                         raise ConnectionError(f"客户端初始化失败: {msg}")
 
                 import asyncio
-                from .config import RUNTIME_CONFIG
+                runtime_config = self.runtime_config
                 
                 stream_iter = self.client.generate_content_stream(prompt, model=model, files=files, chat=chat)
                 if hasattr(stream_iter, "__aiter__"):
@@ -276,8 +314,8 @@ class GeminiConnection:
                 else:
                     aiter = stream_iter
                 
-                queue_timeout = RUNTIME_CONFIG.get("stream_first_chunk_timeout_sec", 45)
-                idle_timeout = RUNTIME_CONFIG.get("stream_idle_timeout_sec", queue_timeout)
+                queue_timeout = runtime_config.get("stream_first_chunk_timeout_sec", 45)
+                idle_timeout = runtime_config.get("stream_idle_timeout_sec", queue_timeout)
                 
                 try:
                     # 强验证首包
@@ -312,7 +350,7 @@ class GeminiConnection:
 
             except UsageLimitExceeded:
                 request_logger.log_error(f"账号 {state.active_account} 额度耗尽", context="stream")
-                if len(tried_accounts) >= len(ACCOUNTS):
+                if len(tried_accounts) >= len(accounts):
                     raise UsageLimitExceeded("所有账号额度已耗尽！请更新账号或等待重置。")
                 switched = await self._switch_account("额度耗尽自动轮换")
                 if not switched:
@@ -324,19 +362,18 @@ class GeminiConnection:
                 request_logger.log_error(f"账号 {state.active_account} 认证失败", context="stream")
                 
                 # Try refresh
-                if state.active_account == "relay_active" and getattr(self, "_stream_refresh_tried", False) is False and AUTH_MANAGER:
+                if state.active_account == "relay_active" and getattr(self, "_stream_refresh_tried", False) is False and auth_manager:
                     from runtime.ticket_refresher import refresh_active_ticket
                     self._stream_refresh_tried = True
-                    refreshed = await refresh_active_ticket(AUTH_MANAGER, self.client)
+                    refreshed = await refresh_active_ticket(auth_manager, self.client)
                     self.last_refresh_result = refreshed
                     if refreshed:
-                        AUTH_MANAGER.set_fallback_state(False)
+                        auth_manager.set_fallback_state(False)
                         request_logger.log_error("流式生成期间刷新长期饭票成功，继续当前逻辑会话。", context="stream")
-                        from .config import reload_runtime_config
-                        reload_runtime_config()
+                        self.reload_runtime_config()
                         continue # Re-try without losing Context!
                         
-                if len(tried_accounts) >= len(ACCOUNTS):
+                if len(tried_accounts) >= len(accounts):
                     raise AuthError("所有账号认证均失败！请更新 Cookie。")
                     
                 if getattr(self, "_stream_refresh_tried", False):

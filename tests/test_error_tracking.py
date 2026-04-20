@@ -220,11 +220,17 @@ def test_proxy_assignment_in_client():
         import asyncio
         conn = GeminiConnection()
         with patch("bundled_gemini.api_client.GeminiClient.init", new_callable=MagicMock) as mock_init:
-            mock_init.return_value = asyncio.Future()
-            mock_init.return_value.set_result(None)
-            asyncio.run(conn.initialize())
-            assert conn.client is not None
-            assert getattr(conn.client, "proxy", None) == "http://127.0.0.1:40001"
+            loop = asyncio.new_event_loop()
+            try:
+                mock_init.return_value = loop.create_future()
+                mock_init.return_value.set_result(None)
+                asyncio.set_event_loop(loop)
+                asyncio.run(conn.initialize())
+                assert conn.client is not None
+                assert getattr(conn.client, "proxy", None) == "http://127.0.0.1:40001"
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
 
 
 @pytest.mark.asyncio

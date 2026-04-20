@@ -1,10 +1,24 @@
 import json
 import os
+import re
 import threading
+import hashlib
 from collections import deque
 from datetime import datetime
 
-from .config import get_runtime_config
+from . import config as config_mod
+
+
+_runtime_config_provider = config_mod.get_runtime_config
+
+
+def set_runtime_config_provider(provider):
+    global _runtime_config_provider
+    _runtime_config_provider = provider or config_mod.get_runtime_config
+
+
+def get_runtime_config_snapshot():
+    return _runtime_config_provider()
 
 
 class RequestLogger:
@@ -30,7 +44,7 @@ class RequestLogger:
         
         self._log_files = {}
         self._log_dir = ""
-        self.reconfigure(log_dir or get_runtime_config().get("log_dir") or "logs")
+        self.reconfigure(log_dir or get_runtime_config_snapshot().get("log_dir") or "logs")
 
     def reconfigure(self, log_dir: str):
         with self._lock:
@@ -60,6 +74,23 @@ class RequestLogger:
                 except OSError:
                     pass
 
+    def _payload_logging_enabled(self) -> bool:
+        return bool(get_runtime_config_snapshot().get("debug_payload_logging", False))
+
+    def _sanitize_text(self, text: str, *, limit: int = 2000) -> str:
+        value = str(text or "")
+        patterns = [
+            (r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+", r"\1***"),
+            (r"(?i)(x-api-key\s*:\s*)[^\s\"']+", r"\1***"),
+            (r"(?i)(x-admin-token\s*:\s*)[^\s\"']+", r"\1***"),
+            (r"(?i)(__Secure-1PSID(?:TS)?=)[^;\s]+", r"\1***"),
+            (r"(?i)(SECURE_1PSID(?:TS)?[\"']?\s*[:=]\s*[\"'])[^\"']+", r"\1***"),
+            (r"(?i)(cookie\s*:\s*)[^\r\n]+", r"\1***"),
+        ]
+        for pattern, repl in patterns:
+            value = re.sub(pattern, repl, value)
+        return value[:limit]
+
     def log_request(self, messages: list, tools: list, prompt_text: str, has_tools: bool, model: str, account: str):
         entry = {
             "type": "request",
@@ -74,10 +105,13 @@ class RequestLogger:
         }
         self._write(entry, channel="request")
         self._last_request = {
-            "prompt_text": prompt_text[-5000:],
             "tool_count": len(tools),
             "model": model,
+            "prompt_chars": len(prompt_text),
+            "prompt_hash": hashlib.md5(prompt_text.encode("utf-8")).hexdigest(),
         }
+        if self._payload_logging_enabled():
+            self._last_request["prompt_text"] = self._sanitize_text(prompt_text[-5000:])
 
     def log_parse_result(self, raw_text: str, has_calls: bool, call_names: list[str], mode: str = "batch"):
         entry = {
@@ -86,13 +120,15 @@ class RequestLogger:
             "raw_chars": len(raw_text),
             "has_calls": has_calls,
             "call_names": call_names,
-            "raw_preview": raw_text[:500],
         }
+        if self._payload_logging_enabled():
+            entry["raw_preview"] = self._sanitize_text(raw_text[:500], limit=500)
         self._write(entry, channel="tool_calls")
         if self._last_request:
-            self._last_request["raw_output"] = raw_text[-5000:]
             self._last_request["parse_has_calls"] = has_calls
             self._last_request["parse_call_names"] = call_names
+            if self._payload_logging_enabled():
+                self._last_request["raw_output"] = self._sanitize_text(raw_text[-5000:])
 
     def log_stream_event(self, event_kind: str, tool_name: str | None = None):
         entry = {"type": "stream_event", "kind": event_kind}
@@ -101,11 +137,11 @@ class RequestLogger:
         self._write(entry, channel="tool_calls")
 
     def log_error(self, error: str, context: str = ""):
-        channel = "auth" if context in ("auth", "switch") else "runtime"
+        channel = "auth" if context in ("auth", "switch") else "tool_calls" if context == "tool_calls" else "runtime"
         self._write({"type": "error", "error": str(error)[:500], "context": context}, channel=channel)
 
     def log_info(self, msg: str, context: str = ""):
-        channel = "auth" if context in ("auth", "switch") else "runtime"
+        channel = "auth" if context in ("auth", "switch") else "tool_calls" if context == "tool_calls" else "runtime"
         self._write({"type": "info", "msg": str(msg)[:500], "context": context}, channel=channel)
 
     def log_account_switch(self, from_account: str, to_account: str, reason: str):

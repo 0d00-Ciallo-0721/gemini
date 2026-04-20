@@ -7,6 +7,8 @@ import json
 import uuid
 from dataclasses import dataclass, field
 
+from . import logger as logger_mod
+
 
 # ============================================================
 # 1. 数据模型
@@ -139,10 +141,34 @@ def safe_json_parse(raw: str) -> dict | None:
     # 【新增】接入终极物理提取防线
     emergency = _emergency_json_parse(raw)
     if emergency:
-        print("⚠️ 触发紧急 JSON 暴力提取机制成功！")
+        logger_mod.request_logger.log_info("emergency json extraction path triggered", context="tool_calls")
         return emergency
 
     return None
+
+
+def strict_json_object_parse(raw: str) -> dict | None:
+    """只接受标准 JSON object，避免宽松修复把普通文本误拽成工具参数。"""
+    raw = (raw or "").strip()
+    if not raw or not raw.startswith("{") or not raw.endswith("}"):
+        return None
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        repaired = repair_literal_newlines(raw)
+        try:
+            parsed = json.loads(repaired)
+        except json.JSONDecodeError:
+            repaired = repair_invalid_backslashes(repaired)
+            try:
+                parsed = json.loads(repaired)
+            except json.JSONDecodeError:
+                return None
+
+    if not isinstance(parsed, dict):
+        return None
+    return _cleanup_over_escaped_args(parsed)
 
 
 def coerce_arguments(v) -> dict:
@@ -232,7 +258,7 @@ def _parse_single_xml_block(inner: str, index: int) -> ToolCall | None:
 
     # 策略 1：内部是 JSON 载荷
     if trimmed.startswith('{'):
-        parsed = safe_json_parse(trimmed)
+        parsed = strict_json_object_parse(trimmed)
         if isinstance(parsed, dict):
             name = _extract_name_from_json(parsed)
             if name:
@@ -256,7 +282,10 @@ def _parse_single_xml_block(inner: str, index: int) -> ToolCall | None:
     if m:
         raw_params = m.group(1).strip()
         if raw_params:
-            args = coerce_arguments(raw_params)
+            parsed_args = strict_json_object_parse(raw_params)
+            if parsed_args is None:
+                return None
+            args = parsed_args
 
     return ToolCall.create(name, json.dumps(args, ensure_ascii=False))
 
@@ -314,7 +343,10 @@ def _parse_xml_tool_use_blocks(text: str) -> list[ToolCall]:
         if pm:
             raw = pm.group(1).strip()
             if raw:
-                args = coerce_arguments(raw)
+                parsed_args = strict_json_object_parse(raw)
+                if parsed_args is None:
+                    continue
+                args = parsed_args
 
         calls.append(ToolCall.create(name, json.dumps(args, ensure_ascii=False)))
     return calls
